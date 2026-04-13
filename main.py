@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Monte Carlo Pricing Engine — Entry Point
-==========================================
-Runs the full analysis pipeline and generates all visualizations.
+Quant Pricing Engine — Entry Point
+=====================================
+Runs the full analysis pipeline for BS, MC, and Binomial pricing.
 
 Usage:
     python -m main
@@ -12,6 +12,7 @@ Usage:
 
 import sys
 import os
+import time
 import numpy as np
 import logging
 
@@ -21,10 +22,11 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)-5s | %(name)s | %(message)s",
     datefmt="%H:%M:%S",
 )
-logger = logging.getLogger("mc_demo")
+logger = logging.getLogger("quant_engine")
 
 from pricing.black_scholes import black_scholes_price
 from pricing.monte_carlo import monte_carlo_price
+from pricing.binomial import binomial_price, binomial_price_with_tree
 from experiments.convergence_analysis import convergence_analysis
 from experiments.variance_reduction import variance_reduction_comparison
 from pricing.visualizations import (
@@ -32,8 +34,11 @@ from pricing.visualizations import (
     plot_payoff_distribution,
     plot_confidence_intervals,
     plot_variance_reduction,
+    plot_binomial_tree,
+    plot_binomial_convergence,
+    plot_early_exercise_boundary,
 )
-from config.settings import DEFAULT_PARAMS, MC_CONFIG
+from config.settings import DEFAULT_PARAMS, MC_CONFIG, BINOMIAL_CONFIG
 
 
 def separator(title: str):
@@ -53,9 +58,14 @@ def main():
     N = MC_CONFIG["n_sims"]
     SEED = MC_CONFIG["seed"]
 
-    # Create output directory for plots
-    output_dir = os.path.join(os.path.dirname(__file__), "output", "mc_plots")
-    os.makedirs(output_dir, exist_ok=True)
+    # Create output directories
+    mc_dir = os.path.join(os.path.dirname(__file__), "output", "mc_plots")
+    bn_dir = os.path.join(os.path.dirname(__file__), "output", "binomial_plots")
+    os.makedirs(mc_dir, exist_ok=True)
+    os.makedirs(bn_dir, exist_ok=True)
+
+    import matplotlib
+    matplotlib.use("Agg")  # Non-interactive backend
 
     # =====================================================================
     # 1. BLACK-SCHOLES REFERENCE
@@ -91,9 +101,9 @@ def main():
             )
 
     # =====================================================================
-    # 3. CONVERGENCE ANALYSIS
+    # 3. CONVERGENCE ANALYSIS (MC)
     # =====================================================================
-    separator("Convergence Analysis")
+    separator("Convergence Analysis (MC)")
     sim_sizes = MC_CONFIG["convergence_sim_sizes"]
     conv_data = convergence_analysis(
         S0, K, T, r, sigma, "call",
@@ -127,49 +137,107 @@ def main():
         )
 
     # =====================================================================
-    # 5. VISUALIZATION
+    # 5. BINOMIAL TREE PRICING
+    # =====================================================================
+    separator("Binomial Tree Pricing")
+
+    bn_steps = BINOMIAL_CONFIG["default_steps"]
+    logger.info(f"  Using N = {bn_steps} steps\n")
+
+    # European options
+    for option_type in ["call", "put"]:
+        bs = float(black_scholes_price(S0, K, T, r, sigma, option_type))
+        euro = binomial_price(S0, K, T, r, sigma, option_type, "european", bn_steps)
+        amer = binomial_price(S0, K, T, r, sigma, option_type, "american", bn_steps)
+        premium = amer["price"] - euro["price"]
+
+        logger.info(f"  {option_type.upper()}:")
+        logger.info(f"    BS Reference = ${bs:.6f}")
+        logger.info(f"    European     = ${euro['price']:.6f} (err = {euro['price']-bs:+.6f})")
+        logger.info(f"    American     = ${amer['price']:.6f} (premium = {premium:+.6f})")
+        logger.info(f"    Time         = {euro['elapsed_ms']:.2f}ms (euro) / {amer['elapsed_ms']:.2f}ms (amer)")
+        logger.info("")
+
+    # =====================================================================
+    # 6. BINOMIAL CONVERGENCE
+    # =====================================================================
+    separator("Binomial Convergence Analysis")
+
+    conv_steps = BINOMIAL_CONFIG["convergence_steps"]
+    bn_conv = {"steps": conv_steps, "call_prices": [], "put_prices": [],
+               "bs_call": bs_call, "bs_put": bs_put}
+
+    logger.info(f"\n  {'N':>6s} | {'Call':>10s} | {'Call Err':>10s} | {'Put':>10s} | {'Put Err':>10s}")
+    logger.info("  " + "-" * 55)
+    for step_n in conv_steps:
+        c = binomial_price(S0, K, T, r, sigma, "call", "european", step_n)
+        p = binomial_price(S0, K, T, r, sigma, "put", "european", step_n)
+        bn_conv["call_prices"].append(c["price"])
+        bn_conv["put_prices"].append(p["price"])
+        logger.info(
+            f"  {step_n:>6d} | ${c['price']:>8.4f} | {c['price']-bs_call:>+10.6f} | "
+            f"${p['price']:>8.4f} | {p['price']-bs_put:>+10.6f}"
+        )
+
+    # =====================================================================
+    # 7. VISUALIZATION
     # =====================================================================
     separator("Generating Plots")
 
-    import matplotlib
-    matplotlib.use("Agg")  # Non-interactive backend
-
-    # 5a. Convergence
+    # --- MC Plots ---
     fig1 = plot_convergence(conv_data,
-                            save_path=os.path.join(output_dir, "convergence.png"),
+                            save_path=os.path.join(mc_dir, "convergence.png"),
                             show=False)
-    logger.info(f"  ✓ Convergence plot saved")
+    logger.info(f"  ✓ MC convergence plot saved")
 
-    # 5b. Payoff distributions
     fig2 = plot_payoff_distribution(S0, K, T, r, sigma, n_sims=N, seed=SEED,
-                                    save_path=os.path.join(output_dir, "payoff_distribution.png"),
+                                    save_path=os.path.join(mc_dir, "payoff_distribution.png"),
                                     show=False)
     logger.info(f"  ✓ Payoff distribution plot saved")
 
-    # 5c. Confidence intervals
     fig3 = plot_confidence_intervals(conv_data, method="standard",
-                                      save_path=os.path.join(output_dir, "confidence_intervals.png"),
+                                      save_path=os.path.join(mc_dir, "confidence_intervals.png"),
                                       show=False)
     logger.info(f"  ✓ Confidence interval plot saved")
 
-    # 5d. Variance reduction comparison
     fig4 = plot_variance_reduction(comp,
-                                    save_path=os.path.join(output_dir, "variance_reduction.png"),
+                                    save_path=os.path.join(mc_dir, "variance_reduction.png"),
                                     show=False)
     logger.info(f"  ✓ Variance reduction plot saved")
+
+    # --- Binomial Plots ---
+    fig5 = plot_binomial_convergence(bn_conv,
+                                     save_path=os.path.join(bn_dir, "convergence.png"),
+                                     show=False)
+    logger.info(f"  ✓ Binomial convergence plot saved")
+
+    # Tree visualization (small N for readability)
+    tree_data = binomial_price_with_tree(S0, K, T, r, sigma, "put", "american", N=8)
+    fig6 = plot_binomial_tree(tree_data, max_display_steps=8,
+                              save_path=os.path.join(bn_dir, "tree_american_put.png"),
+                              show=False)
+    logger.info(f"  ✓ Binomial tree plot saved")
+
+    # Early exercise boundary (larger N for accuracy)
+    boundary_data = binomial_price_with_tree(S0, K, T, r, sigma, "put", "american", N=200)
+    fig7 = plot_early_exercise_boundary(boundary_data,
+                                         save_path=os.path.join(bn_dir, "exercise_boundary.png"),
+                                         show=False)
+    logger.info(f"  ✓ Exercise boundary plot saved")
 
     # =====================================================================
     # SUMMARY
     # =====================================================================
     separator("COMPLETE")
-    logger.info(f"  All plots saved to: {output_dir}/")
-    logger.info(f"  Files:")
-    for f in sorted(os.listdir(output_dir)):
-        fpath = os.path.join(output_dir, f)
-        size = os.path.getsize(fpath) / 1024
-        logger.info(f"    📊 {f} ({size:.0f} KB)")
+    for out_dir, label in [(mc_dir, "Monte Carlo"), (bn_dir, "Binomial")]:
+        logger.info(f"  {label} plots saved to: {out_dir}/")
+        for f in sorted(os.listdir(out_dir)):
+            fpath = os.path.join(out_dir, f)
+            size = os.path.getsize(fpath) / 1024
+            logger.info(f"    📊 {f} ({size:.0f} KB)")
     logger.info("")
 
 
 if __name__ == "__main__":
     main()
+

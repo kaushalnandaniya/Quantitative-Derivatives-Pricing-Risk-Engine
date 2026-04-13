@@ -13,7 +13,12 @@ Plots:
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+import sys
+from pathlib import Path
 from typing import Dict, Optional
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from config.settings import PLOT_STYLE, COLORS
 
@@ -331,6 +336,287 @@ def plot_variance_reduction(
                 color="#c9d1d9", fontweight="bold")
 
     fig.suptitle("Variance Reduction Comparison",
+                 fontsize=15, fontweight="bold", color="#f0f6fc", y=1.02)
+    plt.tight_layout()
+
+    if save_path:
+        fig.savefig(save_path, dpi=150, bbox_inches="tight",
+                    facecolor=fig.get_facecolor())
+    if show:
+        plt.show()
+    return fig
+
+
+# =============================================================================
+# Binomial Tree Visualizations
+# =============================================================================
+
+def plot_binomial_tree(
+    tree_data: Dict,
+    max_display_steps: int = 8,
+    save_path: Optional[str] = None,
+    show: bool = True,
+) -> plt.Figure:
+    """
+    Draw the binomial tree with nodes colored by early exercise decisions.
+
+    Args:
+        tree_data:          Output from binomial_price_with_tree().
+        max_display_steps:  Max steps to display (truncates for readability).
+        save_path:          If provided, save to this path.
+        show:               Whether to display.
+
+    Returns:
+        matplotlib Figure.
+    """
+    _apply_style()
+
+    N = min(tree_data["N"], max_display_steps)
+    stock_tree = tree_data["stock_tree"][:N + 1]
+    option_tree = tree_data["option_tree"][:N + 1]
+    exercise_map = tree_data["early_exercise_map"][:N + 1]
+    style = tree_data["style"]
+    otype = tree_data["option_type"]
+
+    fig, ax = plt.subplots(figsize=(max(14, N * 1.8), max(8, N * 0.8)))
+
+    # Draw edges and nodes
+    for i in range(N + 1):
+        for j in range(i + 1):
+            x = i
+            y = j - i / 2  # Center vertically
+
+            # Node color
+            if exercise_map[i] is not None and j < len(exercise_map[i]) and exercise_map[i][j]:
+                color = COLORS["exercise"]
+                marker_size = 120
+            else:
+                color = COLORS["hold"] if option_tree[i][j] > 0 else "#8b949e"
+                marker_size = 80
+
+            ax.scatter(x, y, c=color, s=marker_size, zorder=5,
+                       edgecolors="white", linewidths=0.5)
+
+            # Labels (stock price / option value)
+            s_val = stock_tree[i][j]
+            v_val = option_tree[i][j]
+            if N <= 6:
+                ax.annotate(f"S={s_val:.1f}\nV={v_val:.2f}",
+                            (x, y), textcoords="offset points",
+                            xytext=(0, 12), fontsize=6, ha="center",
+                            color="#c9d1d9")
+            elif N <= 10:
+                ax.annotate(f"{s_val:.0f}", (x, y),
+                            textcoords="offset points", xytext=(0, 8),
+                            fontsize=5, ha="center", color="#c9d1d9")
+
+            # Draw edges to next level
+            if i < N:
+                # Up edge
+                x_next = i + 1
+                y_up = (j + 1) - (i + 1) / 2
+                y_down = j - (i + 1) / 2
+                ax.plot([x, x_next], [y, y_up], '-', color="#30363d",
+                        linewidth=0.8, alpha=0.6, zorder=1)
+                ax.plot([x, x_next], [y, y_down], '-', color="#30363d",
+                        linewidth=0.8, alpha=0.6, zorder=1)
+
+    # Legend
+    from matplotlib.patches import Patch
+    legend_elements = [
+        Patch(facecolor=COLORS["hold"], label="Hold (V > 0)"),
+        Patch(facecolor="#8b949e", label="Worthless (V = 0)"),
+    ]
+    if style == "american":
+        legend_elements.insert(0, Patch(facecolor=COLORS["exercise"],
+                                        label="Early Exercise"))
+
+    ax.legend(handles=legend_elements, loc="upper left", fontsize=10)
+    ax.set_xlabel("Time Step", fontsize=12, fontweight="bold")
+    ax.set_ylabel("Node Position", fontsize=12, fontweight="bold")
+    ax.set_title(f"Binomial Tree — {style.capitalize()} {otype.capitalize()} "
+                 f"(N={tree_data['N']}, showing {N} steps)",
+                 fontsize=14, fontweight="bold")
+    ax.set_xticks(range(N + 1))
+
+    plt.tight_layout()
+    if save_path:
+        fig.savefig(save_path, dpi=150, bbox_inches="tight",
+                    facecolor=fig.get_facecolor())
+    if show:
+        plt.show()
+    return fig
+
+
+def plot_binomial_convergence(
+    convergence_data: Dict,
+    save_path: Optional[str] = None,
+    show: bool = True,
+) -> plt.Figure:
+    """
+    Plot binomial price convergence to BS as N increases.
+
+    Args:
+        convergence_data: Dict with 'steps', 'call_prices', 'put_prices',
+                         'bs_call', 'bs_put'.
+        save_path:        Optional save path.
+        show:             Whether to display.
+
+    Returns:
+        matplotlib Figure.
+    """
+    _apply_style()
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+
+    steps = convergence_data["steps"]
+    call_prices = convergence_data["call_prices"]
+    put_prices = convergence_data["put_prices"]
+    bs_call = convergence_data["bs_call"]
+    bs_put = convergence_data["bs_put"]
+
+    # Left: Prices
+    ax1.plot(steps, call_prices, 'o-', color=COLORS["binomial"], linewidth=2,
+             markersize=5, label="Binomial Call", alpha=0.9)
+    ax1.plot(steps, put_prices, 's-', color=COLORS["binomial_put"], linewidth=2,
+             markersize=5, label="Binomial Put", alpha=0.9)
+    ax1.axhline(y=bs_call, color=COLORS["bs_ref"], linestyle="--", linewidth=2,
+                label=f"BS Call = {bs_call:.4f}", alpha=0.8)
+    ax1.axhline(y=bs_put, color=COLORS["antithetic"], linestyle="--", linewidth=2,
+                label=f"BS Put = {bs_put:.4f}", alpha=0.8)
+    ax1.set_xscale("log")
+    ax1.set_xlabel("Steps (N)", fontsize=12, fontweight="bold")
+    ax1.set_ylabel("Option Price ($)", fontsize=12, fontweight="bold")
+    ax1.set_title("Binomial Convergence to BS", fontsize=14, fontweight="bold")
+    ax1.legend(fontsize=9)
+    ax1.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
+
+    # Right: Errors
+    call_errors = [abs(c - bs_call) for c in call_prices]
+    put_errors = [abs(p - bs_put) for p in put_prices]
+    ax2.plot(steps, call_errors, 'o-', color=COLORS["binomial"], linewidth=2,
+             markersize=5, label="Call Error", alpha=0.9)
+    ax2.plot(steps, put_errors, 's-', color=COLORS["binomial_put"], linewidth=2,
+             markersize=5, label="Put Error", alpha=0.9)
+    ax2.set_xscale("log")
+    ax2.set_yscale("log")
+    ax2.set_xlabel("Steps (N)", fontsize=12, fontweight="bold")
+    ax2.set_ylabel("Absolute Error ($)", fontsize=12, fontweight="bold")
+    ax2.set_title("Error vs Black-Scholes", fontsize=14, fontweight="bold")
+    ax2.legend(fontsize=9)
+    ax2.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
+
+    fig.suptitle("Binomial Tree — Convergence Analysis",
+                 fontsize=16, fontweight="bold", color="#f0f6fc", y=1.02)
+    plt.tight_layout()
+
+    if save_path:
+        fig.savefig(save_path, dpi=150, bbox_inches="tight",
+                    facecolor=fig.get_facecolor())
+    if show:
+        plt.show()
+    return fig
+
+
+def plot_early_exercise_boundary(
+    tree_data: Dict,
+    save_path: Optional[str] = None,
+    show: bool = True,
+) -> plt.Figure:
+    """
+    Plot the early exercise boundary for an American option.
+
+    Args:
+        tree_data: Output from binomial_price_with_tree() with style='american'.
+        save_path: Optional save path.
+        show:      Whether to display.
+
+    Returns:
+        matplotlib Figure.
+    """
+    _apply_style()
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    boundary = tree_data.get("exercise_boundary", [])
+    if not boundary:
+        ax.text(0.5, 0.5, "No early exercise boundary found",
+                transform=ax.transAxes, ha="center", fontsize=14, color="#c9d1d9")
+        return fig
+
+    times, prices = zip(*sorted(boundary))
+    K = tree_data["params"]["dt"] * tree_data["N"]  # reconstruct T for strike display
+
+    ax.plot(times, prices, '-', color=COLORS["binomial"], linewidth=2.5,
+            label="Exercise Boundary S*(t)", alpha=0.9)
+    ax.fill_between(times, 0, prices, color=COLORS["binomial"], alpha=0.1,
+                    label="Exercise Region")
+
+    ax.set_xlabel("Time (years)", fontsize=12, fontweight="bold")
+    ax.set_ylabel("Critical Stock Price S*(t)", fontsize=12, fontweight="bold")
+    ax.set_title(f"American {tree_data['option_type'].capitalize()} — "
+                 f"Early Exercise Boundary (N={tree_data['N']})",
+                 fontsize=14, fontweight="bold")
+    ax.legend(fontsize=10)
+    ax.set_ylim(bottom=0)
+
+    plt.tight_layout()
+    if save_path:
+        fig.savefig(save_path, dpi=150, bbox_inches="tight",
+                    facecolor=fig.get_facecolor())
+    if show:
+        plt.show()
+    return fig
+
+
+def plot_model_comparison(
+    comparison_data: Dict,
+    save_path: Optional[str] = None,
+    show: bool = True,
+) -> plt.Figure:
+    """
+    Bar chart comparing BS, MC, and Binomial across price, error, and speed.
+
+    Args:
+        comparison_data: Dict with model names as keys, each having
+                        'price', 'error', 'time_ms', 'color'.
+        save_path:       Optional save path.
+        show:            Whether to display.
+
+    Returns:
+        matplotlib Figure.
+    """
+    _apply_style()
+    fig, axes = plt.subplots(1, 3, figsize=(16, 5.5))
+
+    names = list(comparison_data.keys())
+    colors = [comparison_data[n]["color"] for n in names]
+
+    # Price
+    ax = axes[0]
+    prices = [comparison_data[n]["price"] for n in names]
+    bars = ax.bar(names, prices, color=colors, alpha=0.85, width=0.5)
+    ax.set_ylabel("Price ($)", fontsize=11, fontweight="bold")
+    ax.set_title("Option Price", fontsize=13, fontweight="bold")
+    for bar, p in zip(bars, prices):
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
+                f"${p:.4f}", ha="center", va="bottom", fontsize=9, color="#c9d1d9")
+
+    # Error
+    ax = axes[1]
+    errors = [max(comparison_data[n]["error"], 1e-15) for n in names]
+    bars = ax.bar(names, errors, color=colors, alpha=0.85, width=0.5)
+    ax.set_ylabel("Error ($)", fontsize=11, fontweight="bold")
+    ax.set_title("Absolute Error", fontsize=13, fontweight="bold")
+    ax.set_yscale("log")
+
+    # Speed
+    ax = axes[2]
+    times = [comparison_data[n]["time_ms"] for n in names]
+    bars = ax.bar(names, times, color=colors, alpha=0.85, width=0.5)
+    ax.set_ylabel("Time (ms)", fontsize=11, fontweight="bold")
+    ax.set_title("Compute Time", fontsize=13, fontweight="bold")
+    ax.set_yscale("log")
+
+    fig.suptitle("Model Comparison — BS vs MC vs Binomial",
                  fontsize=15, fontweight="bold", color="#f0f6fc", y=1.02)
     plt.tight_layout()
 

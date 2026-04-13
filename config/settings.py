@@ -6,10 +6,10 @@ Central configuration for the quant engine.
 
 # Default market parameters (ATM European option)
 DEFAULT_PARAMS = {
-    "S0": 100.0,      # Spot price
-    "K": 100.0,        # Strike price
-    "T": 1.0,          # Time to maturity (years)
-    "r": 0.05,         # Risk-free rate (5%)
+    "S0": 24050.60,      # Spot price
+    "K": 24000.0,        # Strike price
+    "T": 2/252,          # Time to maturity (years)
+    "r": 0.069,         # Risk-free rate (5%)
     "sigma": 0.2,      # Volatility (20%)
 }
 
@@ -20,6 +20,12 @@ MC_CONFIG = {
     "confidence_level": 0.95,    # Default confidence level
     "methods": ["standard", "antithetic", "control"],
     "convergence_sim_sizes": [100, 500, 1_000, 5_000, 10_000, 50_000, 100_000, 500_000],
+}
+
+# Binomial tree configuration
+BINOMIAL_CONFIG = {
+    "default_steps": 200,        # Default number of time steps
+    "convergence_steps": [10, 25, 50, 100, 200, 500, 1000, 2000],
 }
 
 # Plot style (dark professional theme)
@@ -49,4 +55,8 @@ COLORS = {
     "ci_fill": "#58a6ff",
     "hist_call": "#58a6ff",
     "hist_put": "#f78166",
+    "binomial": "#bc8cff",
+    "binomial_put": "#ff6eb4",
+    "exercise": "#ff4444",
+    "hold": "#7ee787",
 }
