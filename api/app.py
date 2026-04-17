@@ -22,6 +22,7 @@ import traceback
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from api.routes.pricing import router as pricing_router
 from api.routes.risk import router as risk_router
@@ -131,6 +132,14 @@ async def timing_middleware(request: Request, call_next):
 app.include_router(pricing_router)
 app.include_router(risk_router)
 app.include_router(greeks_router)
+
+# =============================================================================
+# Dashboard Mounting
+# =============================================================================
+
+from pathlib import Path
+dashboard_path = Path(__file__).parent.parent / "dashboard"
+app.mount("/dashboard", StaticFiles(directory=str(dashboard_path), html=True), name="dashboard")
 
 # =============================================================================
 # Health Endpoint

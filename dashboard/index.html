@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quant Engine Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+    <link rel="stylesheet" href="/dashboard/styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="logo">
+                <div class="logo-icon">Q</div>
+                <h1>Quant Engine</h1>
+            </div>
+            
+            <ul class="nav-links">
+                <li><a href="#" data-page="overview" class="active">Overview</a></li>
+                <li><a href="#" data-page="pricing">Pricing Lab</a></li>
+                <li><a href="#" data-page="greeks">Greeks Explorer</a></li>
+                <li><a href="#" data-page="risk">Risk Engine</a></li>
+            </ul>
+
+            <div class="system-status">
+                <div class="status-indicator"></div>
+                <span id="api-status">Connecting API...</span>
+            </div>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="content">
+            
+            <!-- OVERVIEW PAGE -->
+            <section id="page-overview" class="page active">
+                <header>
+                    <h2>System Overview</h2>
+                    <p>High-performance quantitative finance engine</p>
+                </header>
+                
+                <div class="cards-grid">
+                    <div class="card glass">
+                        <h3>Pricing Engine</h3>
+                        <p>Compute fair values using Black-Scholes, Monte Carlo, and Binomial Tree models.</p>
+                        <button class="nav-btn" data-target="pricing">Open Pricing Lab</button>
+                    </div>
+                    <div class="card glass">
+                        <h3>Risk Engine</h3>
+                        <p>Simulate portfolio distributions and calculate VaR/CVaR risk metrics.</p>
+                        <button class="nav-btn" data-target="risk">Open Risk Engine</button>
+                    </div>
+                    <div class="card glass">
+                        <h3>Greeks</h3>
+                        <p>Analyze price sensitivities (Delta, Gamma, Vega, Theta).</p>
+                        <button class="nav-btn" data-target="greeks">Open Greeks</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- PRICING PAGE -->
+            <section id="page-pricing" class="page">
+                <header>
+                    <h2>Pricing Lab</h2>
+                </header>
+
+                <div class="dashboard-layout">
+                    <!-- Controls Sidebar -->
+                    <div class="controls-panel glass">
+                        <h3>Parameters</h3>
+                        <form id="pricing-form" class="param-form">
+                            <div class="form-group">
+                                <label>Model</label>
+                                <select id="price-model" name="model">
+                                    <option value="black-scholes">Black-Scholes</option>
+                                    <option value="monte-carlo">Monte Carlo</option>
+                                    <option value="binomial">Binomial Tree</option>
+                                </select>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Type</label>
+                                    <select id="price-type" name="option_type">
+                                        <option value="call">Call</option>
+                                        <option value="put">Put</option>
+                                    </select>
+                                </div>
+                                <div class="form-group" id="binomial-style-group" style="display: none;">
+                                    <label>Style (Binomial)</label>
+                                    <select id="price-style" name="style">
+                                        <option value="european">European</option>
+                                        <option value="american">American</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Spot Price (S): <span class="val-display" id="val-price-s">100</span></label>
+                                <input type="range" id="price-s" name="S" min="50" max="150" step="1" value="100" oninput="document.getElementById('val-price-s').innerText=this.value">
+                            </div>
+
+                            <div class="form-group">
+                                <label>Strike (K): <span class="val-display" id="val-price-k">100</span></label>
+                                <input type="range" id="price-k" name="K" min="50" max="150" step="1" value="100" oninput="document.getElementById('val-price-k').innerText=this.value">
+                            </div>
+
+                            <div class="form-group">
+                                <label>Maturity (T) years: <span class="val-display" id="val-price-t">1.0</span></label>
+                                <input type="range" id="price-t" name="T" min="0.1" max="5.0" step="0.1" value="1.0" oninput="document.getElementById('val-price-t').innerText=this.value">
+                            </div>
+
+                            <div class="form-group">
+                                <label>Volatility (σ): <span class="val-display" id="val-price-v">0.20</span></label>
+                                <input type="range" id="price-v" name="sigma" min="0.05" max="1.0" step="0.01" value="0.2" oninput="document.getElementById('val-price-v').innerText=this.value">
+                            </div>
+
+                            <div class="form-group">
+                                <label>Rate (r): <span class="val-display" id="val-price-r">0.05</span></label>
+                                <input type="range" id="price-r" name="r" min="0.0" max="0.2" step="0.01" value="0.05" oninput="document.getElementById('val-price-r').innerText=this.value">
+                            </div>
+
+                            <button type="submit" class="btn-primary" id="btn-price">Calculate Model Values</button>
+                        </form>
+                    </div>
+
+                    <!-- Results Area -->
+                    <div class="results-panel">
+                        <div class="result-cards">
+                            <div class="stat-card glass">
+                                <h4>Fair Value</h4>
+                                <div class="stat-value" id="res-price-value">--</div>
+                                <div class="stat-meta" id="res-price-time"></div>
+                            </div>
+                            <!-- Conditional stat cards (e.g. CI for MC) -->
+                            <div class="stat-card glass" id="res-mc-extra" style="display:none;">
+                                <h4>95% Confidence Interval</h4>
+                                <div class="stat-value-small" id="res-mc-ci">--</div>
+                            </div>
+                        </div>
+
+                        <div class="chart-container glass">
+                            <!-- Payoff chart or price surface -->
+                            <div id="pricing-chart" style="width:100%; height:400px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- GREEKS PAGE -->
+            <section id="page-greeks" class="page">
+                <header>
+                    <h2>Greeks Explorer</h2>
+                </header>
+                
+                <div class="dashboard-layout">
+                    <!-- Controls -->
+                    <div class="controls-panel glass">
+                        <form id="greeks-form" class="param-form">
+                            <!-- Basic params -->
+                            <div class="form-group">
+                                <label>Type</label>
+                                <select id="greeks-type" name="option_type">
+                                    <option value="call">Call</option>
+                                    <option value="put">Put</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Spot Price (S): <span class="val-display" id="val-gr-s">100</span></label>
+                                <input type="range" id="gr-s" name="S" min="50" max="150" step="1" value="100" oninput="document.getElementById('val-gr-s').innerText=this.value">
+                            </div>
+                            <div class="form-group">
+                                <label>Strike (K): <input type="number" id="gr-k" value="100" class="num-input"></label>
+                            </div>
+                            <div class="form-group">
+                                <label>Time (T): <input type="number" id="gr-t" value="1.0" step="0.1" class="num-input"></label>
+                            </div>
+                            <div class="form-group">
+                                <label>Vol (σ): <input type="number" id="gr-v" value="0.2" step="0.01" class="num-input"></label>
+                            </div>
+                            <div class="form-group">
+                                <label>Rate (r): <input type="number" id="gr-r" value="0.05" step="0.01" class="num-input"></label>
+                            </div>
+                            <button type="submit" class="btn-primary" id="btn-greeks">Compute Greeks</button>
+                        </form>
+                    </div>
+
+                    <!-- Results -->
+                    <div class="results-panel">
+                        <div class="greeks-grid">
+                            <div class="stat-card glass">
+                                <h4>Delta (Δ)</h4>
+                                <div class="stat-value" id="gr-res-delta">--</div>
+                            </div>
+                            <div class="stat-card glass">
+                                <h4>Gamma (Γ)</h4>
+                                <div class="stat-value" id="gr-res-gamma">--</div>
+                            </div>
+                            <div class="stat-card glass">
+                                <h4>Vega (V)</h4>
+                                <div class="stat-value" id="gr-res-vega">--</div>
+                            </div>
+                            <div class="stat-card glass">
+                                <h4>Theta (Θ)</h4>
+                                <div class="stat-value" id="gr-res-theta">--</div>
+                            </div>
+                        </div>
+
+                        <div class="chart-container glass">
+                            <!-- Plot Delta/Gamma vs Spot -->
+                            <div id="greeks-chart" style="width:100%; height:400px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- RISK PAGE -->
+            <section id="page-risk" class="page">
+                <header>
+                    <h2>Portfolio Risk Engine</h2>
+                </header>
+
+                <div class="dashboard-layout risk-layout">
+                    <!-- Portfolio Builder -->
+                    <div class="controls-panel glass portfolio-panel">
+                        <h3>Portfolio Builder</h3>
+                        
+                        <!-- List of positions -->
+                        <div id="portfolio-list" class="portfolio-list">
+                            <!-- Items injected via JS -->
+                        </div>
+
+                        <!-- Add new position -->
+                        <div class="add-position-box">
+                            <h4>Add Position</h4>
+                            <div class="mini-form">
+                                <select id="pos-type"><option value="call">Call</option><option value="put">Put</option></select>
+                                <input type="number" id="pos-qty" placeholder="Qty (e.g. 10)" value="10">
+                                <input type="number" id="pos-k" placeholder="Strike" value="100">
+                                <button type="button" id="btn-add-pos" class="btn-secondary">Add</button>
+                            </div>
+                        </div>
+
+                        <hr style="border-color: rgba(255,255,255,0.1); margin: 1.5rem 0;">
+
+                        <h3>Risk Settings</h3>
+                        <form id="risk-form" class="param-form">
+                            <div class="form-group">
+                                <label>Method</label>
+                                <select id="risk-method" name="method">
+                                    <option value="historical">Historical</option>
+                                    <option value="parametric">Parametric</option>
+                                    <option value="monte_carlo">Monte Carlo</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Confidence Level: <span class="val-display" id="val-risk-conf">0.95</span></label>
+                                <input type="range" id="risk-conf" name="confidence" min="0.9" max="0.99" step="0.01" value="0.95" oninput="document.getElementById('val-risk-conf').innerText=this.value">
+                            </div>
+                            <div class="form-group">
+                                <label>Simulations: <input type="number" id="risk-sims" value="10000" step="1000" class="num-input"></label>
+                            </div>
+                            <button type="submit" class="btn-primary" id="btn-risk">Calculate Risk Metrics</button>
+                        </form>
+                    </div>
+
+                    <!-- Risk Results -->
+                    <div class="results-panel">
+                        <div class="result-cards">
+                            <div class="stat-card glass threat">
+                                <h4>Value at Risk (VaR)</h4>
+                                <div class="stat-value" id="res-var">--</div>
+                                <div class="stat-meta">Max loss at confidence</div>
+                            </div>
+                            <div class="stat-card glass threat">
+                                <h4>Expected Shortfall (CVaR)</h4>
+                                <div class="stat-value" id="res-cvar">--</div>
+                                <div class="stat-meta">Avg loss beyond VaR</div>
+                            </div>
+                            <div class="stat-card glass">
+                                <h4>Mean P&L</h4>
+                                <div class="stat-value" id="res-pnl">--</div>
+                            </div>
+                        </div>
+
+                        <div class="chart-container glass">
+                            <div id="risk-chart" style="width:100%; height:400px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- Spinner Overlay -->
+    <div id="global-spinner" class="spinner-overlay" style="display:none;">
+        <div class="spinner"></div>
+    </div>
+
+    <script src="/dashboard/app.js"></script>
+</body>
+</html>

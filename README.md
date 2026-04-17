@@ -1,25 +1,33 @@
-# Quant Engine
+# End-to-End Quantitative Pricing, Simulation, and Risk Engine
 
-A production-grade quantitative finance system with a REST API, pricing engines, risk analytics, and Greeks computation.
+A production-grade quantitative finance system featuring robust pricing engines, stochastic risk analytics, and an interactive frontend dashboard.
 
 ## 🚀 Key Features
 
 - **3 Pricing Models**: Black-Scholes (analytical), Monte Carlo (3 variance reduction methods), Binomial Tree (European & American)
 - **Risk Engine**: Portfolio VaR, CVaR, multi-asset correlated P&L simulation
 - **Greeks**: Delta, Gamma, Vega, Theta (analytical & numerical)
+- **Interactive Dashboard**: Premium HTML/CSS/JS frontend served directly by FastAPI with interactive Plotly.js charts
 - **REST API**: FastAPI with Pydantic validation, Swagger docs, CORS support
-- **Production Architecture**: API → Service → Core separation, structured logging, error handling
+- **Production Architecture**: UI → API → Service → Core separation, structured logging, error handling
 - **141 Tests**: Full coverage across core modules + API integration tests
+
+## 💻 Tech Stack
+- **Core Engine Engine**: Python 3.12, NumPy, SciPy
+- **Backend API**: FastAPI, Pydantic, Uvicorn
+- **Frontend Dashboard**: HTML5, Vanilla JS, CSS3 (Glassmorphism), Plotly.js
+- **Testing**: Pytest (141 tests, 100% CI pass rate)
 
 ## 📁 Project Structure
 ```
 quant_engine/
 ├── api/                        # REST API layer
-│   ├── app.py                  # FastAPI app, middleware, error handling
-│   └── routes/
-│       ├── pricing.py          # /price/* endpoints
-│       ├── risk.py             # /risk/* endpoints
-│       └── greeks.py           # /greeks/* endpoints
+│   ├── app.py                  # FastAPI app (serves dashboard and API route)
+│   └── routes/                 # Endpoint routers
+├── dashboard/                  # Frontend SPA
+│   ├── index.html              # HTML shell & UI layout
+│   ├── styles.css              # Premium dark theme & glassmorphism
+│   └── app.js                  # API integration & Plotly.js charting
 ├── schemas/                    # Pydantic input validation
 │   ├── pricing.py              # OptionInput, MonteCarloInput, BinomialInput
 │   ├── risk.py                 # PortfolioRiskInput, PositionInput
@@ -97,12 +105,14 @@ curl -X POST http://localhost:8000/risk/portfolio \
 pip install -r requirements.txt
 ```
 
-### Run API Server
+### Run API Server & Dashboard
 ```bash
 cd quant_engine
 uvicorn api.app:app --reload
 ```
-Then open **http://localhost:8000/docs** for interactive Swagger UI.
+Then open:
+- **http://localhost:8000/dashboard** for the Interactive Dashboard.
+- **http://localhost:8000/docs** for the interactive Swagger UI.
 
 ### Run Tests
 ```bash
@@ -116,12 +126,29 @@ cd quant_engine
 python main.py
 ```
 
+## 🚀 Deployment & Demo
+
+**Try it Live!**  
+*(Add your deployed link here: `https://your-app.onrender.com`)*
+
+![Dashboard Preview](dashboard/screenshot.png) *(Note: Add a screenshot of your dashboard to the project root and link it here)*
+
+### Deployment Options:
+This project is container-ready. Because FastAPI serves *both* the backend API and frontend Dashboard concurrently, you only need to run a single web service on **Render**, **Railway**, or **Heroku**:
+- **Start Command**: `uvicorn api.app:app --host 0.0.0.0 --port $PORT`
+
+### Demo Video / Portfolio:
+If you are viewing this on GitHub, check out the [2-minute Demo Video](#) *(Add link here)* which showcases:
+1. **Pricing Lab**: Dynamic payoff charts for Black-Scholes and Monte Carlo simulations.
+2. **Risk Engine**: Formulating portfolios and analyzing CVaR via empirical histogram mapping.
+3. **Greeks Explorer**: Visualizing option sensitivity dynamically.
+
 ## 🏗️ Architecture
 
 ```
-Client (Swagger / Dashboard / curl)
+Client (Dashboard / Swagger / curl)
         ↓
-API Layer (FastAPI routes — zero business logic)
+API Layer (FastAPI serving routes & static files)
         ↓
 Service Layer (orchestration, timing, error handling)
         ↓
