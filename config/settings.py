@@ -28,6 +28,14 @@ BINOMIAL_CONFIG = {
     "convergence_steps": [10, 25, 50, 100, 200, 500, 1000, 2000],
 }
 
+# Risk engine configuration
+RISK_CONFIG = {
+    "n_sims": 100_000,           # MC simulations for risk
+    "confidence_level": 0.95,    # VaR/CVaR confidence
+    "horizon_days": 1,           # Risk horizon in trading days
+    "seed": 42,                  # Random seed
+}
+
 # Plot style (dark professional theme)
 PLOT_STYLE = {
     "figure.facecolor": "#0d1117",
@@ -59,4 +67,11 @@ COLORS = {
     "binomial_put": "#ff6eb4",
     "exercise": "#ff4444",
     "hold": "#7ee787",
+    # Risk engine colors
+    "pnl_hist": "#58a6ff",
+    "var_line": "#f85149",
+    "cvar_line": "#ff6eb4",
+    "cvar_region": "#f8514960",
+    "tail_loss": "#ff6eb4",
 }
+

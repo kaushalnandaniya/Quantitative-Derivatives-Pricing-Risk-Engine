@@ -38,7 +38,19 @@ from pricing.visualizations import (
     plot_binomial_convergence,
     plot_early_exercise_boundary,
 )
-from config.settings import DEFAULT_PARAMS, MC_CONFIG, BINOMIAL_CONFIG
+from config.settings import DEFAULT_PARAMS, MC_CONFIG, BINOMIAL_CONFIG, RISK_CONFIG
+
+from risk.portfolio import Portfolio
+from risk.pnl import simulate_portfolio_pnl
+from risk.var import var, historical_var, parametric_var, monte_carlo_var
+from risk.cvar import cvar
+from risk.correlation import simulate_correlated_gbm
+from pricing.visualizations import (
+    plot_pnl_distribution,
+    plot_var_comparison,
+    plot_tail_risk,
+    plot_correlation_heatmap,
+)
 
 
 def separator(title: str):
@@ -226,10 +238,147 @@ def main():
     logger.info(f"  ✓ Exercise boundary plot saved")
 
     # =====================================================================
+    # 8. RISK ENGINE
+    # =====================================================================
+    separator("Risk Engine — Portfolio VaR & CVaR")
+
+    risk_dir = os.path.join(os.path.dirname(__file__), "output", "risk_plots")
+    os.makedirs(risk_dir, exist_ok=True)
+
+    risk_n_sims = RISK_CONFIG["n_sims"]
+    risk_conf = RISK_CONFIG["confidence_level"]
+    risk_horizon = RISK_CONFIG["horizon_days"]
+    risk_seed = RISK_CONFIG["seed"]
+
+    # --- 8a. Build Portfolio ---
+    logger.info("\n  --- Portfolio Construction ---")
+    portfolio = Portfolio()
+    portfolio.add_position(type="call", S=S0, K=K, T=T, r=r, sigma=sigma, qty=10)
+    portfolio.add_position(type="put",  S=S0, K=K*0.95, T=T, r=r, sigma=sigma*1.1, qty=5)
+    portfolio.add_position(type="call", S=S0, K=K*1.05, T=T*2, r=r, sigma=sigma*0.9, qty=-3)  # short
+
+    summary = portfolio.summary()
+    logger.info(f"  Positions: {portfolio.n_positions}")
+    logger.info(f"  {'#':>3s} | {'Type':<5s} | {'K':>10s} | {'T':>8s} | {'σ':>6s} | {'Qty':>5s} | {'Value':>12s}")
+    logger.info("  " + "-" * 58)
+    for row in summary:
+        logger.info(
+            f"  {row['idx']:>3d} | {row['type']:<5s} | ${row['K']:>8.2f} | "
+            f"{row['T']:>7.4f} | {row['sigma']:>5.2f} | {row['qty']:>5d} | "
+            f"${row['total_value']:>10.2f}"
+        )
+    logger.info(f"\n  Portfolio V₀ = ${float(np.sum(portfolio.value())):,.2f}")
+
+    # --- 8b. P&L Simulation ---
+    logger.info(f"\n  --- P&L Simulation ({risk_n_sims:,} sims, {risk_horizon}d horizon) ---")
+    pnl_result = simulate_portfolio_pnl(
+        portfolio, n_sims=risk_n_sims, horizon_days=risk_horizon, seed=risk_seed,
+    )
+    pnl = pnl_result["pnl"]
+
+    logger.info(f"  V₀     = ${pnl_result['V_0']:,.2f}")
+    logger.info(f"  E[P&L] = ${np.mean(pnl):+,.2f}")
+    logger.info(f"  σ[P&L] = ${np.std(pnl):,.2f}")
+    logger.info(f"  Min    = ${np.min(pnl):+,.2f}")
+    logger.info(f"  Max    = ${np.max(pnl):+,.2f}")
+
+    # --- 8c. VaR (3 Methods) ---
+    logger.info(f"\n  --- Value at Risk ({risk_conf:.0%} confidence) ---")
+    var_hist = historical_var(pnl, risk_conf)
+    var_para = parametric_var(pnl, risk_conf)
+    var_mc   = monte_carlo_var(pnl, risk_conf)
+
+    logger.info(f"  {'Method':<15s} | {'VaR':>12s}")
+    logger.info("  " + "-" * 30)
+    logger.info(f"  {'Historical':<15s} | ${var_hist:>10.2f}")
+    logger.info(f"  {'Parametric':<15s} | ${var_para:>10.2f}")
+    logger.info(f"  {'Monte Carlo':<15s} | ${var_mc:>10.2f}")
+
+    # --- 8d. CVaR ---
+    logger.info(f"\n  --- Expected Shortfall / CVaR ({risk_conf:.0%}) ---")
+    cvar_hist = cvar(pnl, risk_conf, "historical")
+    cvar_para = cvar(pnl, risk_conf, "parametric")
+
+    logger.info(f"  {'Method':<15s} | {'CVaR':>12s} | {'CVaR ≥ VaR':>10s}")
+    logger.info("  " + "-" * 42)
+    logger.info(f"  {'Historical':<15s} | ${cvar_hist:>10.2f} | {'✓' if cvar_hist >= var_hist else '✗':>10s}")
+    logger.info(f"  {'Parametric':<15s} | ${cvar_para:>10.2f} | {'✓' if cvar_para >= var_para else '✗':>10s}")
+
+    # --- 8e. Multi-Asset Correlated Portfolio Demo ---
+    logger.info("\n  --- Multi-Asset Correlated Portfolio ---")
+    multi_port = Portfolio()
+    multi_port.add_position(type="call", S=100, K=100, T=0.25, r=0.05, sigma=0.20, qty=10, asset="AAPL")
+    multi_port.add_position(type="put",  S=50,  K=50,  T=0.25, r=0.05, sigma=0.30, qty=5,  asset="MSFT")
+    multi_port.add_position(type="call", S=200, K=200, T=0.25, r=0.05, sigma=0.25, qty=8,  asset="GOOGL")
+
+    corr_matrix = np.array([
+        [1.0,  0.65, 0.55],
+        [0.65, 1.0,  0.45],
+        [0.55, 0.45, 1.0],
+    ])
+    asset_labels = ["AAPL", "MSFT", "GOOGL"]
+
+    multi_result = simulate_portfolio_pnl(
+        multi_port, n_sims=risk_n_sims, horizon_days=risk_horizon,
+        seed=risk_seed, corr_matrix=corr_matrix,
+    )
+    multi_pnl = multi_result["pnl"]
+
+    multi_var = historical_var(multi_pnl, risk_conf)
+    multi_cvar = cvar(multi_pnl, risk_conf)
+
+    logger.info(f"  Multi-asset V₀   = ${multi_result['V_0']:,.2f}")
+    logger.info(f"  Multi-asset VaR  = ${multi_var:,.2f}")
+    logger.info(f"  Multi-asset CVaR = ${multi_cvar:,.2f}")
+    logger.info(f"  CVaR ≥ VaR: {'✓' if multi_cvar >= multi_var else '✗'}")
+
+    # --- 8f. Risk Visualizations ---
+    separator("Generating Risk Plots")
+
+    fig8 = plot_pnl_distribution(
+        pnl, var_hist, cvar_hist, confidence=risk_conf,
+        title=f"Portfolio P&L Distribution ({risk_n_sims:,} sims, {risk_horizon}d)",
+        save_path=os.path.join(risk_dir, "pnl_distribution.png"),
+        show=False,
+    )
+    logger.info("  ✓ P&L distribution plot saved")
+
+    fig9 = plot_var_comparison(
+        pnl, confidence=risk_conf,
+        save_path=os.path.join(risk_dir, "var_comparison.png"),
+        show=False,
+    )
+    logger.info("  ✓ VaR comparison plot saved")
+
+    fig10 = plot_tail_risk(
+        pnl, confidence=risk_conf,
+        save_path=os.path.join(risk_dir, "tail_risk.png"),
+        show=False,
+    )
+    logger.info("  ✓ Tail risk plot saved")
+
+    fig11 = plot_correlation_heatmap(
+        corr_matrix, asset_labels,
+        title="Multi-Asset Correlation Matrix",
+        save_path=os.path.join(risk_dir, "correlation_heatmap.png"),
+        show=False,
+    )
+    logger.info("  ✓ Correlation heatmap saved")
+
+    # Multi-asset P&L distribution
+    fig12 = plot_pnl_distribution(
+        multi_pnl, multi_var, multi_cvar, confidence=risk_conf,
+        title=f"Multi-Asset P&L (AAPL/MSFT/GOOGL, ρ-correlated)",
+        save_path=os.path.join(risk_dir, "multi_asset_pnl.png"),
+        show=False,
+    )
+    logger.info("  ✓ Multi-asset P&L plot saved")
+
+    # =====================================================================
     # SUMMARY
     # =====================================================================
     separator("COMPLETE")
-    for out_dir, label in [(mc_dir, "Monte Carlo"), (bn_dir, "Binomial")]:
+    for out_dir, label in [(mc_dir, "Monte Carlo"), (bn_dir, "Binomial"), (risk_dir, "Risk")]:
         logger.info(f"  {label} plots saved to: {out_dir}/")
         for f in sorted(os.listdir(out_dir)):
             fpath = os.path.join(out_dir, f)
@@ -240,4 +389,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

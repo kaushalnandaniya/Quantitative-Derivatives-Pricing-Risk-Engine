@@ -626,3 +626,339 @@ def plot_model_comparison(
     if show:
         plt.show()
     return fig
+
+
+# =============================================================================
+# Risk Engine Visualizations
+# =============================================================================
+
+def plot_pnl_distribution(
+    pnl: np.ndarray,
+    var_val: float,
+    cvar_val: float,
+    confidence: float = 0.95,
+    title: str = "Portfolio P&L Distribution",
+    save_path: Optional[str] = None,
+    show: bool = True,
+) -> plt.Figure:
+    """
+    Plot P&L histogram with VaR line and CVaR shaded tail region.
+
+    Args:
+        pnl:        Array of P&L values (negative = loss).
+        var_val:    VaR value (positive number = loss magnitude).
+        cvar_val:   CVaR value (positive number = loss magnitude).
+        confidence: Confidence level used.
+        title:      Plot title.
+        save_path:  Optional save path.
+        show:       Whether to display.
+
+    Returns:
+        matplotlib Figure.
+    """
+    _apply_style()
+    fig, ax = plt.subplots(figsize=(14, 7))
+
+    # Histogram
+    n, bins, patches = ax.hist(
+        pnl, bins=150, density=True, alpha=0.7,
+        color="#58a6ff", edgecolor="none", label="P&L Distribution",
+    )
+
+    # Color the tail (losses beyond VaR)
+    for patch, left_edge in zip(patches, bins[:-1]):
+        if left_edge < -var_val:
+            patch.set_facecolor("#f85149")
+            patch.set_alpha(0.85)
+
+    # VaR line
+    ax.axvline(
+        -var_val, color="#ffd700", linestyle="--", linewidth=2.5,
+        label=f"VaR ({confidence:.0%}) = ${var_val:,.2f}",
+    )
+
+    # CVaR line
+    ax.axvline(
+        -cvar_val, color="#ff6eb4", linestyle="-.", linewidth=2.5,
+        label=f"CVaR ({confidence:.0%}) = ${cvar_val:,.2f}",
+    )
+
+    # Zero line
+    ax.axvline(0, color="#8b949e", linestyle=":", linewidth=1, alpha=0.5)
+
+    # Shade CVaR region
+    ax.axvspan(
+        min(pnl.min(), -cvar_val * 1.5), -var_val,
+        alpha=0.12, color="#f85149", label="Tail Risk Region",
+    )
+
+    # Stats annotation box
+    stats_text = (
+        f"Mean P&L: ${np.mean(pnl):+,.2f}\n"
+        f"Std Dev:  ${np.std(pnl):,.2f}\n"
+        f"Min:      ${np.min(pnl):+,.2f}\n"
+        f"Max:      ${np.max(pnl):+,.2f}\n"
+        f"Skew:     {_skewness(pnl):.3f}\n"
+        f"Kurtosis: {_kurtosis(pnl):.3f}"
+    )
+    props = dict(boxstyle="round,pad=0.5", facecolor="#161b22",
+                 edgecolor="#30363d", alpha=0.9)
+    ax.text(
+        0.98, 0.95, stats_text, transform=ax.transAxes,
+        fontsize=9, verticalalignment="top", horizontalalignment="right",
+        bbox=props, color="#c9d1d9", fontfamily="monospace",
+    )
+
+    ax.set_xlabel("Profit & Loss ($)", fontsize=12, fontweight="bold")
+    ax.set_ylabel("Density", fontsize=12, fontweight="bold")
+    ax.set_title(title, fontsize=14, fontweight="bold")
+    ax.legend(loc="upper left", fontsize=10)
+
+    plt.tight_layout()
+    if save_path:
+        fig.savefig(save_path, dpi=150, bbox_inches="tight",
+                    facecolor=fig.get_facecolor())
+    if show:
+        plt.show()
+    return fig
+
+
+def plot_var_comparison(
+    pnl: np.ndarray,
+    confidence: float = 0.95,
+    save_path: Optional[str] = None,
+    show: bool = True,
+) -> plt.Figure:
+    """
+    Compare all 3 VaR methods side-by-side on the same P&L distribution.
+    """
+    from risk.var import historical_var, parametric_var, monte_carlo_var
+    from risk.cvar import cvar as compute_cvar
+
+    _apply_style()
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6.5))
+
+    # Compute all VaR methods
+    var_hist = historical_var(pnl, confidence)
+    var_para = parametric_var(pnl, confidence)
+    var_mc = monte_carlo_var(pnl, confidence)
+
+    cvar_hist = compute_cvar(pnl, confidence, method="historical")
+    cvar_para = compute_cvar(pnl, confidence, method="parametric")
+
+    # Left: P&L distribution with VaR lines
+    ax1.hist(pnl, bins=120, density=True, alpha=0.6, color="#58a6ff",
+             edgecolor="none", label="P&L")
+
+    colors_var = {"Historical": "#ffd700", "Parametric": "#7ee787", "Monte Carlo": "#bc8cff"}
+    for name, val, color in [
+        ("Historical", var_hist, "#ffd700"),
+        ("Parametric", var_para, "#7ee787"),
+        ("Monte Carlo", var_mc, "#bc8cff"),
+    ]:
+        ax1.axvline(-val, color=color, linestyle="--", linewidth=2.5,
+                    label=f"{name} VaR = ${val:,.2f}")
+
+    ax1.set_xlabel("P&L ($)", fontsize=12, fontweight="bold")
+    ax1.set_ylabel("Density", fontsize=12, fontweight="bold")
+    ax1.set_title(f"VaR Comparison ({confidence:.0%})", fontsize=14, fontweight="bold")
+    ax1.legend(fontsize=9)
+
+    # Right: Bar chart of VaR and CVaR
+    methods = ["Historical", "Parametric", "Monte Carlo"]
+    var_vals = [var_hist, var_para, var_mc]
+    cvar_vals = [cvar_hist, cvar_para, cvar_hist]  # MC uses empirical CVaR
+    bar_colors = ["#ffd700", "#7ee787", "#bc8cff"]
+
+    x = np.arange(len(methods))
+    width = 0.35
+
+    bars1 = ax2.bar(x - width/2, var_vals, width, label="VaR",
+                     color=bar_colors, alpha=0.85, edgecolor="none")
+    bars2 = ax2.bar(x + width/2, cvar_vals, width, label="CVaR",
+                     color=bar_colors, alpha=0.45, edgecolor=bar_colors,
+                     linewidth=2, linestyle="--")
+
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(methods, fontsize=10)
+    ax2.set_ylabel("Loss Magnitude ($)", fontsize=12, fontweight="bold")
+    ax2.set_title("VaR vs CVaR by Method", fontsize=14, fontweight="bold")
+    ax2.legend(fontsize=10)
+
+    # Value labels
+    for bar in bars1:
+        ax2.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
+                 f"${bar.get_height():,.1f}", ha="center", va="bottom",
+                 fontsize=8, color="#c9d1d9")
+    for bar in bars2:
+        ax2.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
+                 f"${bar.get_height():,.1f}", ha="center", va="bottom",
+                 fontsize=8, color="#c9d1d9")
+
+    fig.suptitle("Value at Risk — Method Comparison",
+                 fontsize=16, fontweight="bold", color="#f0f6fc", y=1.02)
+    plt.tight_layout()
+
+    if save_path:
+        fig.savefig(save_path, dpi=150, bbox_inches="tight",
+                    facecolor=fig.get_facecolor())
+    if show:
+        plt.show()
+    return fig
+
+
+def plot_tail_risk(
+    pnl: np.ndarray,
+    confidence: float = 0.95,
+    save_path: Optional[str] = None,
+    show: bool = True,
+) -> plt.Figure:
+    """
+    Zoomed view of the left tail (losses beyond VaR).
+    Highlights the CVaR region.
+    """
+    from risk.var import historical_var
+    from risk.cvar import cvar as compute_cvar
+
+    _apply_style()
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6.5))
+
+    var_val = historical_var(pnl, confidence)
+    cvar_val = compute_cvar(pnl, confidence)
+
+    # Left: Full distribution with tail highlighted
+    ax1.hist(pnl, bins=150, density=True, alpha=0.5, color="#58a6ff",
+             edgecolor="none")
+
+    # Tail losses
+    tail = pnl[pnl <= -var_val]
+    if len(tail) > 0:
+        ax1.hist(tail, bins=50, density=True, alpha=0.8, color="#f85149",
+                 edgecolor="none", label=f"Tail losses (n={len(tail):,})")
+
+    ax1.axvline(-var_val, color="#ffd700", linestyle="--", linewidth=2.5,
+                label=f"VaR = ${var_val:,.2f}")
+    ax1.axvline(-cvar_val, color="#ff6eb4", linestyle="-.", linewidth=2.5,
+                label=f"CVaR = ${cvar_val:,.2f}")
+
+    ax1.set_xlabel("P&L ($)", fontsize=12, fontweight="bold")
+    ax1.set_ylabel("Density", fontsize=12, fontweight="bold")
+    ax1.set_title("Full Distribution + Tail", fontsize=14, fontweight="bold")
+    ax1.legend(fontsize=9)
+
+    # Right: Zoomed tail
+    if len(tail) > 0:
+        ax2.hist(tail, bins=40, density=True, alpha=0.8, color="#f85149",
+                 edgecolor="none", label="Tail Losses")
+        ax2.axvline(-var_val, color="#ffd700", linestyle="--", linewidth=2.5,
+                    label=f"VaR = ${var_val:,.2f}")
+        ax2.axvline(-cvar_val, color="#ff6eb4", linestyle="-.", linewidth=2.5,
+                    label=f"CVaR = ${cvar_val:,.2f}")
+        ax2.axvline(np.mean(tail), color="#7ee787", linestyle="-", linewidth=2,
+                    label=f"Mean tail loss = ${-np.mean(tail):,.2f}")
+
+        # Percentile markers
+        for pct, ls in [(1, ":"), (0.1, "-")]:
+            pct_val = np.percentile(pnl, pct)
+            ax2.axvline(pct_val, color="#8b949e", linestyle=ls, linewidth=1,
+                        alpha=0.6, label=f"{pct}th percentile = ${pct_val:+,.2f}")
+
+        ax2.set_xlim(right=-var_val * 0.9)
+        ax2.set_xlabel("P&L ($)", fontsize=12, fontweight="bold")
+        ax2.set_ylabel("Density", fontsize=12, fontweight="bold")
+        ax2.set_title("Tail Risk (Zoomed)", fontsize=14, fontweight="bold")
+        ax2.legend(fontsize=8)
+    else:
+        ax2.text(0.5, 0.5, "No tail losses observed",
+                 transform=ax2.transAxes, ha="center", fontsize=14,
+                 color="#c9d1d9")
+
+    fig.suptitle("Tail Risk Analysis",
+                 fontsize=16, fontweight="bold", color="#f0f6fc", y=1.02)
+    plt.tight_layout()
+
+    if save_path:
+        fig.savefig(save_path, dpi=150, bbox_inches="tight",
+                    facecolor=fig.get_facecolor())
+    if show:
+        plt.show()
+    return fig
+
+
+def plot_correlation_heatmap(
+    corr_matrix: np.ndarray,
+    labels: list,
+    title: str = "Asset Correlation Matrix",
+    save_path: Optional[str] = None,
+    show: bool = True,
+) -> plt.Figure:
+    """
+    Professional heatmap of asset correlation matrix.
+
+    Args:
+        corr_matrix: (n, n) correlation matrix.
+        labels:      List of asset names.
+        title:       Plot title.
+        save_path:   Optional save path.
+        show:        Whether to display.
+
+    Returns:
+        matplotlib Figure.
+    """
+    _apply_style()
+    n = len(labels)
+    fig, ax = plt.subplots(figsize=(max(8, n * 1.5), max(6, n * 1.2)))
+
+    # Heatmap
+    im = ax.imshow(corr_matrix, cmap="coolwarm", vmin=-1, vmax=1, aspect="auto")
+
+    # Annotations
+    for i in range(n):
+        for j in range(n):
+            val = corr_matrix[i, j]
+            text_color = "white" if abs(val) > 0.5 else "#c9d1d9"
+            ax.text(j, i, f"{val:.2f}", ha="center", va="center",
+                    fontsize=11, fontweight="bold", color=text_color)
+
+    # Axis labels
+    ax.set_xticks(range(n))
+    ax.set_yticks(range(n))
+    ax.set_xticklabels(labels, fontsize=11, fontweight="bold")
+    ax.set_yticklabels(labels, fontsize=11, fontweight="bold")
+
+    # Colorbar
+    cbar = fig.colorbar(im, ax=ax, shrink=0.8, pad=0.02)
+    cbar.set_label("Correlation", fontsize=11, fontweight="bold")
+    cbar.ax.tick_params(labelsize=9)
+
+    ax.set_title(title, fontsize=14, fontweight="bold", pad=15)
+
+    plt.tight_layout()
+    if save_path:
+        fig.savefig(save_path, dpi=150, bbox_inches="tight",
+                    facecolor=fig.get_facecolor())
+    if show:
+        plt.show()
+    return fig
+
+
+# --- Helper stats functions for annotations ---
+def _skewness(x):
+    """Sample skewness."""
+    n = len(x)
+    m = np.mean(x)
+    s = np.std(x, ddof=1)
+    if s < 1e-15:
+        return 0.0
+    return (n / ((n-1) * (n-2))) * np.sum(((x - m) / s) ** 3) if n > 2 else 0.0
+
+
+def _kurtosis(x):
+    """Sample excess kurtosis."""
+    n = len(x)
+    m = np.mean(x)
+    s = np.std(x, ddof=1)
+    if s < 1e-15 or n < 4:
+        return 0.0
+    k4 = np.mean(((x - m) / s) ** 4)
+    return k4 - 3.0

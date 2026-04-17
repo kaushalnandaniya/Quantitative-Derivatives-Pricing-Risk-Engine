@@ -1,68 +1,140 @@
-# Quant Engine: Black-Scholes & Monte Carlo Pricing Suite
+# Quant Engine
 
-A high-performance, vectorized implementation of the Black-Scholes-Merton model and Monte Carlo simulation engine for European options.
+A production-grade quantitative finance system with a REST API, pricing engines, risk analytics, and Greeks computation.
 
 ## 🚀 Key Features
-- **Vectorized Engine**: Handles millions of price paths simultaneously using NumPy.
-- **Dual Greeks**: Analytical (closed-form) and Numerical (Finite Difference) implementations.
-- **Monte Carlo**: Standard, Antithetic Variates, and Control Variates methods.
-- **Robustness**: Handles edge cases like $T \to 0$ and $\sigma \to 0$ without crashes.
-- **Validation**: Full test suite verifying Put-Call Parity, convergence, and variance reduction.
+
+- **3 Pricing Models**: Black-Scholes (analytical), Monte Carlo (3 variance reduction methods), Binomial Tree (European & American)
+- **Risk Engine**: Portfolio VaR, CVaR, multi-asset correlated P&L simulation
+- **Greeks**: Delta, Gamma, Vega, Theta (analytical & numerical)
+- **REST API**: FastAPI with Pydantic validation, Swagger docs, CORS support
+- **Production Architecture**: API → Service → Core separation, structured logging, error handling
+- **141 Tests**: Full coverage across core modules + API integration tests
 
 ## 📁 Project Structure
 ```
 quant_engine/
-├── pricing/                    # Core pricing logic
-│   ├── black_scholes.py        # Black-Scholes analytical pricing
-│   ├── monte_carlo.py          # Monte Carlo simulation engine
-│   ├── greeks.py               # Greeks (analytical & numerical)
+├── api/                        # REST API layer
+│   ├── app.py                  # FastAPI app, middleware, error handling
+│   └── routes/
+│       ├── pricing.py          # /price/* endpoints
+│       ├── risk.py             # /risk/* endpoints
+│       └── greeks.py           # /greeks/* endpoints
+├── schemas/                    # Pydantic input validation
+│   ├── pricing.py              # OptionInput, MonteCarloInput, BinomialInput
+│   ├── risk.py                 # PortfolioRiskInput, PositionInput
+│   └── greeks.py               # GreeksInput
+├── services/                   # Business logic orchestration
+│   ├── pricing_service.py      # Delegates to pricing modules
+│   ├── risk_service.py         # Portfolio risk pipeline
+│   └── greeks_service.py       # Greeks computation
+├── pricing/                    # Core pricing engines
+│   ├── black_scholes.py        # BS analytical pricing
+│   ├── monte_carlo.py          # MC simulation (standard/antithetic/control)
+│   ├── binomial.py             # CRR binomial tree (European/American)
+│   ├── greeks.py               # Greeks calculator
 │   └── visualizations.py       # Production-quality plots
+├── risk/                       # Core risk engine
+│   ├── portfolio.py            # Portfolio representation & valuation
+│   ├── pnl.py                  # P&L simulation (single & multi-asset)
+│   ├── var.py                  # VaR (historical, parametric, MC)
+│   ├── cvar.py                 # Expected Shortfall / CVaR
+│   └── correlation.py          # Cholesky-based correlated GBM
 ├── models/                     # Mathematical models
-│   └── gbm.py                  # Geometric Brownian Motion simulator
-├── utils/                      # Shared helpers
-│   ├── math_utils.py           # Safe division, numerical utilities
-│   └── random_utils.py         # RNG helpers, seeds
-├── experiments/                # Analysis & research
-│   ├── convergence_analysis.py # MC convergence studies
-│   └── variance_reduction.py   # Variance reduction comparison
-├── tests/                      # Unit tests
-│   ├── test_black_scholes.py   # BS pricing tests
-│   ├── test_monte_carlo.py     # MC engine tests
-│   └── test_greeks.py          # Greeks validation tests
-├── notebooks/                  # Jupyter notebooks
-│   └── visualization.ipynb     # Interactive exploration
+│   └── gbm.py                  # GBM terminal price simulator
 ├── config/                     # Configuration
-│   └── settings.py             # Market params, MC config, plot styles
-├── main.py                     # Entry point
+│   └── settings.py             # Market params, MC/risk config, plot styles
+├── experiments/                # Analysis & research
+├── tests/                      # Test suite (141 tests)
+│   ├── test_api.py             # API integration tests (40 tests)
+│   ├── test_black_scholes.py
+│   ├── test_monte_carlo.py
+│   ├── test_binomial.py
+│   ├── test_greeks.py
+│   ├── test_portfolio.py
+│   └── test_var.py
+├── main.py                     # CLI entry point (full analysis pipeline)
 ├── requirements.txt
 └── README.md
 ```
 
-## 📊 The Formula
-The price of a Call option is derived via:
-$$C = S_0 N(d_1) - K e^{-rT} N(d_2)$$
+## 🔌 API Endpoints
 
-### Core Assumptions
-1. **Geometric Brownian Motion**: Log-returns are normally distributed.
-2. **Efficient Markets**: No arbitrage opportunities and constant risk-free rate.
-3. **Frictionless**: No transaction costs or taxes.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET`  | `/` | Health check |
+| `POST` | `/price/black-scholes` | Black-Scholes pricing |
+| `POST` | `/price/monte-carlo` | Monte Carlo pricing (standard/antithetic/control) |
+| `POST` | `/price/binomial` | Binomial tree pricing (European/American) |
+| `POST` | `/risk/portfolio` | Portfolio VaR, CVaR & P&L analysis |
+| `POST` | `/greeks/calculate` | Delta, Gamma, Vega, Theta |
 
-## 🛠 Usage
-```python
-from pricing.black_scholes import black_scholes_price
-
-price = black_scholes_price(S=100, K=100, T=1, r=0.05, sigma=0.2)
-print(f"Option Fair Value: {price:.2f}")
+### Example: Price an Option
+```bash
+curl -X POST http://localhost:8000/price/black-scholes \
+  -H "Content-Type: application/json" \
+  -d '{"S": 100, "K": 100, "T": 1, "r": 0.05, "sigma": 0.2, "option_type": "call"}'
 ```
 
-## 🧪 Running Tests
+### Example: Portfolio Risk
+```bash
+curl -X POST http://localhost:8000/risk/portfolio \
+  -H "Content-Type: application/json" \
+  -d '{
+    "portfolio": [
+      {"type": "call", "S": 100, "K": 100, "T": 0.25, "r": 0.05, "sigma": 0.2, "qty": 10},
+      {"type": "put", "S": 100, "K": 95, "T": 0.25, "r": 0.05, "sigma": 0.25, "qty": 5}
+    ],
+    "confidence": 0.95,
+    "n_sims": 100000
+  }'
+```
+
+## 🛠 Quick Start
+
+### Install
+```bash
+pip install -r requirements.txt
+```
+
+### Run API Server
+```bash
+cd quant_engine
+uvicorn api.app:app --reload
+```
+Then open **http://localhost:8000/docs** for interactive Swagger UI.
+
+### Run Tests
 ```bash
 cd quant_engine
 pytest tests/ -v
 ```
 
-## 🚀 Running the Full Pipeline
+### Run Full Analysis Pipeline (CLI)
 ```bash
 cd quant_engine
 python main.py
 ```
+
+## 🏗️ Architecture
+
+```
+Client (Swagger / Dashboard / curl)
+        ↓
+API Layer (FastAPI routes — zero business logic)
+        ↓
+Service Layer (orchestration, timing, error handling)
+        ↓
+Core Modules (pricing, risk, models)
+```
+
+**Design Principles:**
+- **API routes** validate input and delegate — nothing else
+- **Services** orchestrate core modules and add metadata
+- **Core modules** are pure computational engines — no HTTP awareness
+- **Pydantic schemas** enforce domain constraints at the boundary
+
+## 📊 The Black-Scholes Formula
+$$C = S_0 N(d_1) - K e^{-rT} N(d_2)$$
+
+**Assumptions:** GBM log-returns, no arbitrage, constant risk-free rate, no transaction costs.
