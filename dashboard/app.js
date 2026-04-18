@@ -1,5 +1,5 @@
-// API Base URL
-const API_URL = 'http://127.0.0.1:8000';
+// API Base URL (dynamically uses local or production host)
+const API_URL = window.location.origin;
 
 // Global Chart layout configuration (dark theme)
 const plotLayout = {
