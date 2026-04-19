@@ -1,14 +1,14 @@
 // API Base URL (dynamically uses local or production host)
 const API_URL = window.location.origin;
 
-// Global Chart layout configuration (dark theme)
+// Global Chart layout configuration (Sensibull flat theme)
 const plotLayout = {
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(0,0,0,0)',
-    font: { color: '#c9d1d9', family: 'Inter' },
+    font: { color: '#8b9298', family: 'Inter', size: 12 },
     margin: { t: 40, r: 20, b: 40, l: 50 },
-    xaxis: { gridcolor: '#30363d', zerolinecolor: '#484f58' },
-    yaxis: { gridcolor: '#30363d', zerolinecolor: '#484f58' }
+    xaxis: { gridcolor: '#272a31', zerolinecolor: '#3f434a', zerolinewidth: 2 },
+    yaxis: { gridcolor: '#272a31', zerolinecolor: '#3f434a', zerolinewidth: 2 }
 };
 
 // ==========================================
@@ -146,27 +146,31 @@ function renderPayoffChart(S, K, type, premium) {
     const spots = Array.from({length: 100}, (_, i) => K * 0.5 + (K * 1.0)*i/100);
     const payoffs = spots.map(s => {
         let val = type === 'call' ? Math.max(s - K, 0) : Math.max(K - s, 0);
-        return val - premium; // profit
+        return val - premium;
     });
 
-    const trace = {
-        x: spots,
-        y: payoffs,
-        type: 'scatter',
-        mode: 'lines',
-        line: {color: '#58a6ff', width: 2},
-        fill: 'tozeroy',
-        fillcolor: 'rgba(88, 166, 255, 0.2)'
+    const profit = payoffs.map(p => p >= 0 ? p : null);
+    const loss = payoffs.map(p => p <= 0 ? p : null);
+
+    const traceProfit = {
+        x: spots, y: profit, type: 'scatter', mode: 'none',
+        fill: 'tozeroy', fillcolor: 'rgba(0, 204, 102, 0.25)', name: 'Profit',
+        hoverinfo: 'skip'
     };
     
-    // Line at zero
-    const zeroLine = {
-        x: [spots[0], spots[spots.length-1]], y: [0,0],
-        type: 'scatter', mode: 'lines', line: {color: '#8b949e', dash: 'dash'}
+    const traceLoss = {
+        x: spots, y: loss, type: 'scatter', mode: 'none',
+        fill: 'tozeroy', fillcolor: 'rgba(255, 59, 48, 0.25)', name: 'Loss',
+        hoverinfo: 'skip'
     };
 
-    const layout = { ...plotLayout, title: 'Option P&L at Expiry', xaxis: {title:'Spot Price'}, yaxis: {title:'Profit / Loss'} };
-    Plotly.newPlot('pricing-chart', [trace, zeroLine], layout, {responsive: true});
+    const traceLine = {
+        x: spots, y: payoffs, type: 'scatter', mode: 'lines',
+        line: {color: '#2962ff', width: 2}, name: 'P&L'
+    };
+
+    const layout = { ...plotLayout, title: 'Option P&L at Expiry', showlegend: false, xaxis: {title:'Spot Price'}, yaxis: {title:'Profit / Loss'} };
+    Plotly.newPlot('pricing-chart', [traceProfit, traceLoss, traceLine], layout, {responsive: true});
 }
 
 // ==========================================
@@ -233,7 +237,9 @@ async function renderDeltaChart(basePayload) {
 
     const trace = {
         x: spots, y: deltas, type: 'scatter', mode: 'lines',
-        line: {color: '#f85149', width: 3}
+        line: {color: '#2962ff', width: 2},
+        fill: 'tozeroy',
+        fillcolor: 'rgba(41, 98, 255, 0.1)'
     };
     const layout = { ...plotLayout, title: 'Delta Profile vs Spot', xaxis: {title:'Spot'}, yaxis: {title:'Delta'} };
     Plotly.newPlot('greeks-chart', [trace], layout, {responsive: true});
@@ -341,7 +347,7 @@ function renderRiskChart(varVal, cvarVal, mean, std, conf) {
         x: pnl,
         type: 'histogram',
         nbinsx: 50,
-        marker: { color: 'rgba(88, 166, 255, 0.7)' }
+        marker: { color: 'rgba(0, 204, 102, 0.6)' }
     };
     
     // VaR line
@@ -349,7 +355,7 @@ function renderRiskChart(varVal, cvarVal, mean, std, conf) {
         type: 'line',
         x0: -varVal, x1: -varVal,
         y0: 0, y1: 1, yref: 'paper',
-        line: { color: '#f85149', width: 2, dash: 'dash' }
+        line: { color: '#ff3b30', width: 2, dash: 'dash' }
     };
 
     const layout = { 
@@ -359,7 +365,7 @@ function renderRiskChart(varVal, cvarVal, mean, std, conf) {
         shapes: [varLine],
         annotations: [{
             x: -varVal, y: 1, xref: 'x', yref: 'paper',
-            text: `VaR (${(conf*100).toFixed(0)}%)`, showarrow: true, font: {color: '#f85149'}
+            text: `VaR (${(conf*100).toFixed(0)}%)`, showarrow: true, font: {color: '#ff3b30', size: 10}
         }]
     };
     
