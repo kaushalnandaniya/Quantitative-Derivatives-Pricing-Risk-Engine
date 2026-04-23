@@ -24,6 +24,9 @@
                 <li><a href="#" data-page="pricing">Pricing Lab</a></li>
                 <li><a href="#" data-page="greeks">Greeks Explorer</a></li>
                 <li><a href="#" data-page="risk">Risk Engine</a></li>
+                <li><a href="#" data-page="strategy">Strategy Sim</a></li>
+                <li><a href="#" data-page="scenario">Scenarios</a></li>
+                <li><a href="#" data-page="market">Market Data</a></li>
             </ul>
 
             <div class="system-status">
@@ -99,18 +102,25 @@
                             </div>
 
                             <div class="form-group">
-                                <label>Spot Price (S): <span class="val-display" id="val-price-s">100</span></label>
-                                <input type="range" id="price-s" name="S" min="50" max="150" step="1" value="100" oninput="document.getElementById('val-price-s').innerText=this.value">
+                                <label>Spot Price (S): <input type="number" id="price-s" name="S" value="100" step="any" class="num-input"></label>
                             </div>
 
                             <div class="form-group">
-                                <label>Strike (K): <span class="val-display" id="val-price-k">100</span></label>
-                                <input type="range" id="price-k" name="K" min="50" max="150" step="1" value="100" oninput="document.getElementById('val-price-k').innerText=this.value">
+                                <label>Strike (K): <input type="number" id="price-k" name="K" value="100" step="any" class="num-input"></label>
                             </div>
 
-                            <div class="form-group">
-                                <label>Maturity (T) years: <span class="val-display" id="val-price-t">1.0</span></label>
-                                <input type="range" id="price-t" name="T" min="0.1" max="5.0" step="0.1" value="1.0" oninput="document.getElementById('val-price-t').innerText=this.value">
+                            <div class="form-row">
+                                <div class="form-group" style="flex: 2;">
+                                    <label>Maturity (T): <input type="number" id="price-t" name="T" value="1.0" step="0.1" class="num-input"></label>
+                                </div>
+                                <div class="form-group" style="flex: 1;">
+                                    <label>Unit</label>
+                                    <select id="price-t-unit" class="num-input" style="padding-top: 0.5rem; padding-bottom: 0.5rem; margin-top: -2px;">
+                                        <option value="years">Years</option>
+                                        <option value="weeks">Weeks</option>
+                                        <option value="days">Days</option>
+                                    </select>
+                                </div>
                             </div>
 
                             <div class="form-group">
@@ -169,14 +179,23 @@
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label>Spot Price (S): <span class="val-display" id="val-gr-s">100</span></label>
-                                <input type="range" id="gr-s" name="S" min="50" max="150" step="1" value="100" oninput="document.getElementById('val-gr-s').innerText=this.value">
+                                <label>Spot Price (S): <input type="number" id="gr-s" name="S" value="100" step="any" class="num-input"></label>
                             </div>
                             <div class="form-group">
-                                <label>Strike (K): <input type="number" id="gr-k" value="100" class="num-input"></label>
+                                <label>Strike (K): <input type="number" id="gr-k" value="100" step="any" class="num-input"></label>
                             </div>
-                            <div class="form-group">
-                                <label>Time (T): <input type="number" id="gr-t" value="1.0" step="0.1" class="num-input"></label>
+                            <div class="form-row">
+                                <div class="form-group" style="flex: 2;">
+                                    <label>Time (T): <input type="number" id="gr-t" value="1.0" step="0.1" class="num-input"></label>
+                                </div>
+                                <div class="form-group" style="flex: 1;">
+                                    <label>Unit</label>
+                                    <select id="gr-t-unit" class="num-input" style="padding-top: 0.5rem; padding-bottom: 0.5rem; margin-top:-2px;">
+                                        <option value="years">Years</option>
+                                        <option value="weeks">Weeks</option>
+                                        <option value="days">Days</option>
+                                    </select>
+                                </div>
                             </div>
                             <div class="form-group">
                                 <label>Vol (σ): <input type="number" id="gr-v" value="0.2" step="0.01" class="num-input"></label>
@@ -206,6 +225,10 @@
                             <div class="stat-card glass">
                                 <h4>Theta (Θ)</h4>
                                 <div class="stat-value" id="gr-res-theta">--</div>
+                            </div>
+                            <div class="stat-card glass">
+                                <h4>Rho (ρ)</h4>
+                                <div class="stat-value" id="gr-res-rho">--</div>
                             </div>
                         </div>
 
@@ -237,9 +260,10 @@
                         <div class="add-position-box">
                             <h4>Add Position</h4>
                             <div class="mini-form">
-                                <select id="pos-type"><option value="call">Call</option><option value="put">Put</option></select>
-                                <input type="number" id="pos-qty" placeholder="Qty (e.g. 10)" value="10">
-                                <input type="number" id="pos-k" placeholder="Strike" value="100">
+                                <select id="pos-type" style="flex:1"><option value="call">Call</option><option value="put">Put</option></select>
+                                <input type="number" id="pos-qty" placeholder="Qty" value="1" style="flex:1">
+                                <input type="number" id="pos-s" placeholder="Spot (S)" step="any" value="24000" style="flex:2">
+                                <input type="number" id="pos-k" placeholder="Strike (K)" step="any" value="24000" style="flex:2">
                                 <button type="button" id="btn-add-pos" class="btn-secondary">Add</button>
                             </div>
                         </div>
@@ -293,6 +317,122 @@
                 </div>
             </section>
 
+            <!-- STRATEGY SIMULATOR PAGE -->
+            <section id="page-strategy" class="page">
+                <header>
+                    <h2>Strategy Simulator</h2>
+                    <p>Build multi-leg option strategies and simulate P&L profiles</p>
+                </header>
+                <div class="dashboard-layout">
+                    <div class="controls-panel glass">
+                        <h3>Strategy</h3>
+                        <div class="strategy-selector" id="strategy-selector"></div>
+                        <h4 style="margin:0.8rem 0 0.3rem; font-size:0.85rem; color:var(--text-dark);">Legs</h4>
+                        <div class="legs-list" id="strategy-legs"><span style="color:var(--text-muted); font-size:0.8rem;">Select a strategy above</span></div>
+                        <hr style="border-color:rgba(255,255,255,0.1); margin:1rem 0;">
+                        <h3>Parameters</h3>
+                        <form id="strategy-form" class="param-form">
+                            <div class="form-group">
+                                <label>Spot (S): <input type="number" id="strat-s" value="24000" step="any" class="num-input"></label>
+                            </div>
+                            <div class="form-group">
+                                <label>ATM Strike (K): <input type="number" id="strat-k" value="24000" step="any" class="num-input"></label>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group" style="flex:2">
+                                    <label>Maturity (T): <input type="number" id="strat-t" value="7" step="1" class="num-input"></label>
+                                </div>
+                                <div class="form-group" style="flex:1">
+                                    <label>Unit</label>
+                                    <select id="strat-t-unit" class="num-input"><option value="days">Days</option><option value="weeks">Weeks</option><option value="years">Years</option></select>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Vol (&sigma;): <input type="number" id="strat-v" value="0.14" step="0.01" class="num-input"></label>
+                            </div>
+                            <div class="form-group">
+                                <label>Rate (r): <input type="number" id="strat-r" value="0.069" step="0.01" class="num-input"></label>
+                            </div>
+                            <button type="submit" class="btn-primary" id="btn-strategy">Simulate Strategy</button>
+                        </form>
+                    </div>
+                    <div class="results-panel">
+                        <div class="strategy-stats" id="strategy-stats"></div>
+                        <div class="greeks-grid" id="strategy-greeks"></div>
+                        <div class="chart-container glass">
+                            <div id="strategy-chart" style="width:100%; height:400px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SCENARIO ANALYSIS PAGE -->
+            <section id="page-scenario" class="page">
+                <header>
+                    <h2>Scenario Analysis</h2>
+                    <p>Stress test portfolios with spot, volatility, and time shifts</p>
+                </header>
+                <div class="dashboard-layout">
+                    <div class="controls-panel glass">
+                        <h3>Portfolio</h3>
+                        <div id="scenario-portfolio" class="portfolio-list"><span style="color:var(--text-muted); font-size:0.8rem;">No positions</span></div>
+                        <div class="add-position-box">
+                            <h4>Add Position</h4>
+                            <div class="mini-form">
+                                <select id="sc-pos-type"><option value="call">Call</option><option value="put">Put</option></select>
+                                <input type="number" id="sc-pos-qty" placeholder="Qty" value="10">
+                                <input type="number" id="sc-pos-s" placeholder="Spot" value="24000" step="any">
+                                <input type="number" id="sc-pos-k" placeholder="Strike" value="24000" step="any">
+                                <button type="button" id="btn-sc-add">Add</button>
+                            </div>
+                        </div>
+                        <hr style="border-color:rgba(255,255,255,0.1); margin:1rem 0;">
+                        <h3>Heatmap Axes</h3>
+                        <form id="scenario-form" class="param-form">
+                            <div class="form-group">
+                                <label>X Axis</label>
+                                <select id="sc-x-axis"><option value="spot">Spot Shift</option><option value="time">Time Decay</option></select>
+                            </div>
+                            <div class="form-group">
+                                <label>Y Axis</label>
+                                <select id="sc-y-axis"><option value="vol">Vol Shift</option><option value="time">Time Decay</option></select>
+                            </div>
+                            <div class="form-group">
+                                <label>Resolution: <input type="number" id="sc-res" value="15" min="5" max="30" class="num-input"></label>
+                            </div>
+                            <button type="submit" class="btn-primary" id="btn-scenario">Generate Heatmap</button>
+                        </form>
+                    </div>
+                    <div class="results-panel">
+                        <div class="result-cards" id="scenario-stats"></div>
+                        <div class="chart-container glass">
+                            <div id="scenario-chart" style="width:100%; height:450px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- MARKET DATA PAGE -->
+            <section id="page-market" class="page">
+                <header>
+                    <h2>Market Data</h2>
+                    <p>Live quotes and option chains via Zerodha Kite API (mock mode)</p>
+                </header>
+                <div class="symbol-tabs" id="symbol-tabs">
+                    <button class="symbol-tab active" data-symbol="NIFTY">NIFTY</button>
+                    <button class="symbol-tab" data-symbol="BANKNIFTY">BANKNIFTY</button>
+                    <button class="symbol-tab" data-symbol="RELIANCE">RELIANCE</button>
+                </div>
+                <div class="quote-card glass" id="market-quote">
+                    <span style="color:var(--text-muted);">Select a symbol to load quote...</span>
+                </div>
+                <div class="chart-container glass" style="padding:0; min-height:auto;">
+                    <div class="chain-table-wrap" id="chain-table-wrap" style="width:100%;">
+                        <p style="padding:2rem; color:var(--text-muted); text-align:center;">Option chain will appear here</p>
+                    </div>
+                </div>
+            </section>
+
         </main>
     </div>
 
@@ -301,6 +441,6 @@
         <div class="spinner"></div>
     </div>
 
-    <script src="/dashboard/app.js?v=3"></script>
+    <script src="/dashboard/app.js?v=6"></script>
 </body>
 </html>

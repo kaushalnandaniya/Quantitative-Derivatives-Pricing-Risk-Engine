@@ -26,18 +26,21 @@ class TestHealth:
     """Test the health endpoint."""
 
     def test_health_returns_running(self):
-        response = client.get("/")
+        response = client.get("/health")
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "running"
-        assert data["version"] == "1.0.0"
+        assert data["version"] == "2.0.0"
 
     def test_health_lists_endpoints(self):
-        response = client.get("/")
+        response = client.get("/health")
         data = response.json()
         assert "pricing" in data["endpoints"]
         assert "risk" in data["endpoints"]
         assert "greeks" in data["endpoints"]
+        assert "market" in data["endpoints"]
+        assert "strategies" in data["endpoints"]
+        assert "scenario" in data["endpoints"]
 
 
 # =========================================================================

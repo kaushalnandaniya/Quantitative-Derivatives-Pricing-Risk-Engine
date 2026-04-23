@@ -20,13 +20,17 @@ import logging
 import traceback
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from api.routes.pricing import router as pricing_router
 from api.routes.risk import router as risk_router
 from api.routes.greeks import router as greeks_router
+from api.routes.market import router as market_router
+from api.routes.strategies import router as strategies_router
+from api.routes.scenario import router as scenario_router
+from api.routes.portfolio_greeks import router as portfolio_greeks_router
 
 # =============================================================================
 # Logging Configuration
@@ -132,6 +136,10 @@ async def timing_middleware(request: Request, call_next):
 app.include_router(pricing_router)
 app.include_router(risk_router)
 app.include_router(greeks_router)
+app.include_router(market_router)
+app.include_router(strategies_router)
+app.include_router(scenario_router)
+app.include_router(portfolio_greeks_router)
 
 # =============================================================================
 # Dashboard Mounting
@@ -149,6 +157,17 @@ app.mount("/dashboard", StaticFiles(directory=str(dashboard_path), html=True), n
 @app.get(
     "/",
     tags=["System"],
+    summary="Redirect to Dashboard",
+    include_in_schema=False,
+)
+def root():
+    """Redirects the root URL to the interactive dashboard."""
+    return RedirectResponse(url="/dashboard")
+
+
+@app.get(
+    "/health",
+    tags=["System"],
     summary="Health Check",
     description="Returns the API status and version.",
 )
@@ -156,12 +175,15 @@ def health():
     """Health check — confirms the API is running."""
     return {
         "status": "running",
-        "version": "1.0.0",
+        "version": "2.0.0",
         "engine": "Quant Engine",
         "endpoints": {
             "pricing": ["/price/black-scholes", "/price/monte-carlo", "/price/binomial"],
             "risk": ["/risk/portfolio"],
-            "greeks": ["/greeks/calculate"],
+            "greeks": ["/greeks/calculate", "/greeks/portfolio"],
+            "market": ["/market/status", "/market/quote/{symbol}", "/market/option-chain/{symbol}"],
+            "strategies": ["/strategies/list", "/strategies/simulate"],
+            "scenario": ["/scenario/stress-test", "/scenario/heatmap"],
             "docs": ["/docs", "/redoc"],
         },
     }

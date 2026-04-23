@@ -6,3 +6,6 @@ pytest>=7.3.0
 fastapi>=0.100.0
 uvicorn[standard]>=0.22.0
 httpx>=0.24.0
+pydantic>=2.0.0
+# Optional: Live market data via Zerodha Kite
+# kiteconnect>=5.0.0
