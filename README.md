@@ -3,7 +3,7 @@
 A production-grade quantitative finance system featuring robust pricing engines, stochastic risk analytics, strategy simulation, live market data integration, and an interactive 7-page frontend dashboard.
 
 ## 🚀 Key Features
-hi
+
 - **3 Pricing Models**: Black-Scholes (analytical), Monte Carlo (3 variance reduction methods), Binomial Tree (European & American)
 - **Risk Engine**: Portfolio VaR, CVaR, multi-asset correlated P&L simulation
 - **Greeks**: Delta, Gamma, Vega, Theta, Rho (analytical & numerical) — per-option and portfolio-level aggregation
