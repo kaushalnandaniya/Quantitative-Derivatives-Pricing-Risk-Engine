@@ -15,11 +15,15 @@ Docs:
     http://localhost:8000/redoc      (ReDoc)
 """
 
+import os
 import time
 import logging
 import traceback
 
-from fastapi import FastAPI, Request
+from dotenv import load_dotenv
+load_dotenv()  # Load .env before any config reads
+
+from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -31,6 +35,11 @@ from api.routes.market import router as market_router
 from api.routes.strategies import router as strategies_router
 from api.routes.scenario import router as scenario_router
 from api.routes.portfolio_greeks import router as portfolio_greeks_router
+from api.routes.auth import router as auth_router
+from api.routes.portfolios import router as portfolios_router
+from api.routes.trades import router as trades_router
+from api.routes.reports import router as reports_router
+from api.routes.alerts import router as alerts_router
 
 # =============================================================================
 # Logging Configuration
@@ -48,8 +57,8 @@ logger = logging.getLogger("quant_engine.api")
 # =============================================================================
 
 app = FastAPI(
-    title="Quant Engine API",
-    version="1.0.0",
+    title="Quant Engine Platform",
+    version="3.0.0",
     description=(
         "Production-grade quantitative finance API.\n\n"
         "**Pricing Models:**\n"
@@ -133,6 +142,7 @@ async def timing_middleware(request: Request, call_next):
 # Routes
 # =============================================================================
 
+app.include_router(auth_router)
 app.include_router(pricing_router)
 app.include_router(risk_router)
 app.include_router(greeks_router)
@@ -140,6 +150,10 @@ app.include_router(market_router)
 app.include_router(strategies_router)
 app.include_router(scenario_router)
 app.include_router(portfolio_greeks_router)
+app.include_router(portfolios_router)
+app.include_router(trades_router)
+app.include_router(reports_router)
+app.include_router(alerts_router)
 
 # =============================================================================
 # Dashboard Mounting
@@ -175,15 +189,44 @@ def health():
     """Health check — confirms the API is running."""
     return {
         "status": "running",
-        "version": "2.0.0",
-        "engine": "Quant Engine",
+        "version": "3.0.0",
+        "engine": "Quant Engine Platform",
         "endpoints": {
+            "auth": ["/auth/register", "/auth/login", "/auth/refresh", "/auth/me"],
             "pricing": ["/price/black-scholes", "/price/monte-carlo", "/price/binomial"],
             "risk": ["/risk/portfolio"],
             "greeks": ["/greeks/calculate", "/greeks/portfolio"],
             "market": ["/market/status", "/market/quote/{symbol}", "/market/option-chain/{symbol}"],
             "strategies": ["/strategies/list", "/strategies/simulate"],
             "scenario": ["/scenario/stress-test", "/scenario/heatmap"],
+            "portfolios": ["/portfolios", "/portfolios/{id}", "/portfolios/{id}/calculate-risk"],
+            "trades": ["/trades", "/trades/{id}", "/trades/{id}/close", "/trades/positions"],
+            "reports": ["/reports/trades", "/reports/portfolios", "/reports/risk"],
+            "alerts": ["/alerts", "/alerts/{id}", "/alerts/evaluate"],
+            "websocket": ["ws://localhost:8000/ws/market/{symbol}"],
             "docs": ["/docs", "/redoc"],
         },
     }
+
+
+# =============================================================================
+# WebSocket Endpoint
+# =============================================================================
+
+from api.websockets.market_feed import market_feed_handler
+
+@app.websocket("/ws/market/{symbol}")
+async def ws_market(websocket: WebSocket, symbol: str):
+    """WebSocket endpoint for real-time market data."""
+    await market_feed_handler(websocket, symbol)
+
+
+# =============================================================================
+# Database Initialization on Startup
+# =============================================================================
+
+@app.on_event("startup")
+def on_startup():
+    from db.database import init_db
+    init_db()
+    logger.info("Quant Engine Platform v3.0.0 started")

@@ -30,7 +30,7 @@ class TestHealth:
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "running"
-        assert data["version"] == "2.0.0"
+        assert data["version"] == "3.0.0"
 
     def test_health_lists_endpoints(self):
         response = client.get("/health")

@@ -1,26 +1,41 @@
-# End-to-End Quantitative Pricing, Simulation, and Risk Engine
+# Quant Engine Platform v3.0
 
-A production-grade quantitative finance system featuring robust pricing engines, stochastic risk analytics, strategy simulation, live market data integration, and an interactive 7-page frontend dashboard.
+**Institutional-grade derivatives pricing, portfolio risk management, and strategy simulation platform.**
+
+Full-stack fintech application with a Python/FastAPI backend, Next.js React frontend, JWT authentication, trade management, WebSocket feeds, and Docker deployment.
 
 ## 🚀 Key Features
 
+### Pricing & Analytics
 - **3 Pricing Models**: Black-Scholes (analytical), Monte Carlo (3 variance reduction methods), Binomial Tree (European & American)
 - **Risk Engine**: Portfolio VaR, CVaR, multi-asset correlated P&L simulation
 - **Greeks**: Delta, Gamma, Vega, Theta, Rho (analytical & numerical) — per-option and portfolio-level aggregation
 - **Implied Volatility Solver**: Newton-Raphson with bisection fallback for robust IV recovery
-- **Strategy Simulator**: 8 pre-built multi-leg strategies (Straddle, Strangle, Iron Condor, Butterfly, Spreads) with P&L profiling, breakeven calculation, and net Greeks
-- **Scenario Analysis**: Multi-dimensional stress testing (spot/vol/time/rate shifts) with 2D P&L heatmap generation
-- **Market Data Integration**: Dual-mode provider — mock (NIFTY/BANKNIFTY/RELIANCE with IV smile) and live (Zerodha Kite API)
-- **Interactive Dashboard**: Premium 7-page HTML/CSS/JS frontend with Plotly.js charts, option chain tables, and heatmap visualizations
-- **REST API**: FastAPI with Pydantic validation, Swagger docs, CORS support — 14 endpoints
-- **Production Architecture**: UI → API → Service → Core separation, structured logging, error handling
-- **174 Tests**: Full coverage across core modules, new features, and API integration tests
+- **Strategy Simulator**: 8 pre-built multi-leg strategies (Straddle, Strangle, Iron Condor, Butterfly, Spreads)
+- **Scenario Analysis**: Multi-dimensional stress testing with 2D P&L heatmap generation
+
+### Full-Stack Platform
+- **JWT Authentication**: Register, login, token refresh, role-based access (trader/risk_manager/admin)
+- **Trade Management**: Book trades (auto-BS pricing), trade blotter, position tracking, close trades
+- **Portfolio Persistence**: Save/load portfolios to database, run risk on saved positions
+- **Reports & Alerts**: CSV trade/portfolio exports, VaR breach alerts, price triggers
+- **WebSocket Feeds**: Real-time market price ticks via `ws://localhost:8000/ws/market/{symbol}`
+- **Next.js Frontend**: 8-page React dashboard with Tailwind CSS dark theme
+- **Docker Ready**: docker-compose for one-command deployment
+- **CI/CD**: GitHub Actions pipeline with Python tests + Next.js build
+
+### Infrastructure
+- **REST API**: FastAPI with 30+ endpoints, Pydantic validation, Swagger docs
+- **Database**: SQLAlchemy ORM with 5 tables (SQLite dev / PostgreSQL prod)
+- **174 Tests**: Full coverage across core modules and API integration
 
 ## 💻 Tech Stack
 - **Core Engine**: Python 3.12, NumPy, SciPy
-- **Backend API**: FastAPI, Pydantic, Uvicorn
-- **Frontend Dashboard**: HTML5, Vanilla JS, CSS3 (Glassmorphism), Plotly.js
-- **Market Data**: Zerodha Kite Connect SDK (optional, mock mode available)
+- **Backend API**: FastAPI, Pydantic, SQLAlchemy, JWT (python-jose), bcrypt
+- **Frontend**: Next.js 16, React 19, TypeScript, Tailwind CSS 4, Zustand
+- **Database**: SQLite (dev) / PostgreSQL (prod)
+- **Market Data**: Mock provider + Zerodha Kite Connect SDK (optional)
+- **DevOps**: Docker, docker-compose, GitHub Actions
 - **Testing**: Pytest (174 tests, 100% pass rate)
 
 ## 📁 Project Structure
