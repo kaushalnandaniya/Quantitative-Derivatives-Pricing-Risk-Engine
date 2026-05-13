@@ -40,6 +40,9 @@ from api.routes.portfolios import router as portfolios_router
 from api.routes.trades import router as trades_router
 from api.routes.reports import router as reports_router
 from api.routes.alerts import router as alerts_router
+from api.routes.orders import router as orders_router
+from api.routes.admin import router as admin_router
+from api.routes.regulatory import router as regulatory_router
 
 # =============================================================================
 # Logging Configuration
@@ -154,6 +157,9 @@ app.include_router(portfolios_router)
 app.include_router(trades_router)
 app.include_router(reports_router)
 app.include_router(alerts_router)
+app.include_router(orders_router)
+app.include_router(admin_router)
+app.include_router(regulatory_router)
 
 # =============================================================================
 # Dashboard Mounting
@@ -190,6 +196,7 @@ def health():
     return {
         "status": "running",
         "version": "3.0.0",
+        "tier": "3",
         "engine": "Quant Engine Platform",
         "endpoints": {
             "auth": ["/auth/register", "/auth/login", "/auth/refresh", "/auth/me"],
@@ -203,6 +210,10 @@ def health():
             "trades": ["/trades", "/trades/{id}", "/trades/{id}/close", "/trades/positions"],
             "reports": ["/reports/trades", "/reports/portfolios", "/reports/risk"],
             "alerts": ["/alerts", "/alerts/{id}", "/alerts/evaluate"],
+            "orders": ["/orders", "/orders/{id}", "/orders/{id}/fill", "/orders/risk-check", "/orders/executions/history"],
+            "admin": ["/admin/tenants", "/admin/users", "/admin/audit-log", "/admin/system"],
+            "regulatory": ["/regulatory/var", "/regulatory/stressed-var", "/regulatory/capital-charge", "/regulatory/leverage", "/regulatory/concentration", "/regulatory/full-report"],
+            "monitoring": ["/metrics", "/health/deep"],
             "websocket": ["ws://localhost:8000/ws/market/{symbol}"],
             "docs": ["/docs", "/redoc"],
         },
@@ -222,6 +233,26 @@ async def ws_market(websocket: WebSocket, symbol: str):
 
 
 # =============================================================================
+# Monitoring Endpoints
+# =============================================================================
+
+from fastapi.responses import Response as RawResponse
+
+@app.get("/metrics", tags=["Monitoring"], summary="Prometheus Metrics")
+def metrics():
+    """Expose Prometheus metrics endpoint."""
+    from services.monitoring import get_metrics_response
+    body, content_type = get_metrics_response()
+    return RawResponse(content=body, media_type=content_type)
+
+@app.get("/health/deep", tags=["Monitoring"], summary="Deep Health Check")
+def deep_health():
+    """Deep health check with system metrics."""
+    from services.monitoring import system_health
+    return system_health()
+
+
+# =============================================================================
 # Database Initialization on Startup
 # =============================================================================
 
@@ -229,4 +260,4 @@ async def ws_market(websocket: WebSocket, symbol: str):
 def on_startup():
     from db.database import init_db
     init_db()
-    logger.info("Quant Engine Platform v3.0.0 started")
+    logger.info("Quant Engine Platform v3.0.0 (Tier 3) started")

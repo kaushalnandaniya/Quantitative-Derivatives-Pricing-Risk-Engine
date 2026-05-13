@@ -15,10 +15,12 @@ from typing import Dict
 from pricing.black_scholes import black_scholes_price
 from pricing.monte_carlo import monte_carlo_price
 from pricing.binomial import binomial_price
+from services.cache_service import cached
 
 logger = logging.getLogger(__name__)
 
 
+@cached("bs_price", ttl=5)
 def compute_black_scholes(
     S: float,
     K: float,
@@ -59,6 +61,7 @@ def compute_black_scholes(
     }
 
 
+@cached("mc_price", ttl=10)
 def compute_monte_carlo(
     S: float,
     K: float,
@@ -116,6 +119,7 @@ def compute_monte_carlo(
     }
 
 
+@cached("binomial_price", ttl=10)
 def compute_binomial(
     S: float,
     K: float,

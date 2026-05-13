@@ -57,6 +57,27 @@ class AlertType(str, enum.Enum):
     margin_call = "margin_call"
 
 
+class TenantPlan(str, enum.Enum):
+    basic = "basic"
+    professional = "professional"
+    enterprise = "enterprise"
+
+
+class OrderStatus(str, enum.Enum):
+    pending = "pending"
+    validated = "validated"
+    rejected = "rejected"
+    submitted = "submitted"
+    partial_fill = "partial_fill"
+    filled = "filled"
+    cancelled = "cancelled"
+
+
+class OrderType(str, enum.Enum):
+    market = "market"
+    limit = "limit"
+
+
 # =============================================================================
 # Helper
 # =============================================================================
@@ -73,10 +94,48 @@ def utc_now():
 # Models
 # =============================================================================
 
+class Tenant(Base):
+    __tablename__ = "tenants"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    name = Column(String(255), nullable=False, unique=True)
+    domain = Column(String(255), nullable=True)
+    config = Column(JSON, nullable=False, default=dict)  # {features, branding, etc.}
+    plan = Column(Enum(TenantPlan), default=TenantPlan.basic, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+
+    # Relationships
+    users = relationship("User", back_populates="tenant", cascade="all, delete-orphan")
+    risk_limits = relationship("RiskLimits", back_populates="tenant", uselist=False, cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<Tenant '{self.name}' plan={self.plan}>"
+
+
+class RiskLimits(Base):
+    __tablename__ = "risk_limits"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    tenant_id = Column(String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, unique=True)
+    max_portfolio_var = Column(Float, nullable=False, default=100000.0)
+    max_position_size = Column(Integer, nullable=False, default=1000)
+    max_notional = Column(Float, nullable=False, default=10000000.0)
+    margin_requirement = Column(Float, nullable=False, default=0.1)  # 10%
+    custom_rules = Column(JSON, nullable=False, default=dict)
+
+    # Relationships
+    tenant = relationship("Tenant", back_populates="risk_limits")
+
+    def __repr__(self):
+        return f"<RiskLimits tenant={self.tenant_id} maxVaR={self.max_portfolio_var}>"
+
+
 class User(Base):
     __tablename__ = "users"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
+    tenant_id = Column(String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
     full_name = Column(String(255), nullable=False)
@@ -86,8 +145,10 @@ class User(Base):
     last_login = Column(DateTime, nullable=True)
 
     # Relationships
+    tenant = relationship("Tenant", back_populates="users")
     portfolios = relationship("Portfolio", back_populates="user", cascade="all, delete-orphan")
     trades = relationship("Trade", back_populates="user", cascade="all, delete-orphan")
+    orders = relationship("Order", back_populates="user", cascade="all, delete-orphan")
     alerts = relationship("Alert", back_populates="user", cascade="all, delete-orphan")
     audit_logs = relationship("AuditLog", back_populates="user", cascade="all, delete-orphan")
 
@@ -203,3 +264,63 @@ class AuditLog(Base):
 
     def __repr__(self):
         return f"<AuditLog {self.method} {self.endpoint}>"
+
+
+class Order(Base):
+    __tablename__ = "orders"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    portfolio_id = Column(String(36), ForeignKey("portfolios.id", ondelete="SET NULL"), nullable=True)
+    side = Column(Enum(TradeSide), nullable=False)
+    option_type = Column(Enum(OptionType), nullable=False)
+    order_type = Column(Enum(OrderType), default=OrderType.market, nullable=False)
+    spot_price = Column(Float, nullable=False)
+    strike = Column(Float, nullable=False)
+    T = Column(Float, nullable=False)
+    r = Column(Float, nullable=False, default=0.05)
+    sigma = Column(Float, nullable=False)
+    quantity = Column(Integer, nullable=False)
+    limit_price = Column(Float, nullable=True)  # For limit orders
+    filled_quantity = Column(Integer, default=0, nullable=False)
+    avg_fill_price = Column(Float, nullable=True)
+    status = Column(Enum(OrderStatus), default=OrderStatus.pending, nullable=False)
+    risk_check_result = Column(JSON, nullable=True)  # Pre-trade risk check details
+    rejection_reason = Column(Text, nullable=True)
+    submitted_at = Column(DateTime, default=utc_now, nullable=False)
+    filled_at = Column(DateTime, nullable=True)
+    cancelled_at = Column(DateTime, nullable=True)
+    notes = Column(Text, nullable=True)
+
+    # Relationships
+    user = relationship("User", back_populates="orders")
+    portfolio = relationship("Portfolio")
+    executions = relationship("Execution", back_populates="order", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("ix_orders_user_status", "user_id", "status"),
+    )
+
+    @property
+    def is_terminal(self):
+        return self.status in (OrderStatus.filled, OrderStatus.rejected, OrderStatus.cancelled)
+
+    def __repr__(self):
+        return f"<Order {self.side.value} {self.quantity}x {self.option_type.value} K={self.strike} status={self.status.value}>"
+
+
+class Execution(Base):
+    __tablename__ = "executions"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    order_id = Column(String(36), ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)
+    fill_price = Column(Float, nullable=False)
+    fill_quantity = Column(Integer, nullable=False)
+    executed_at = Column(DateTime, default=utc_now, nullable=False)
+    exchange_ref = Column(String(100), nullable=True)  # External reference
+
+    # Relationships
+    order = relationship("Order", back_populates="executions")
+
+    def __repr__(self):
+        return f"<Execution {self.fill_quantity}x @ {self.fill_price}>"

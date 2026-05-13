@@ -25,6 +25,10 @@ class MarketDataProvider(ABC):
     @abstractmethod
     def get_option_chain(self, symbol: str, expiry: Optional[str] = None) -> Dict: ...
     @abstractmethod
+    def get_historical_data(self, symbol: str, period: str = "1mo") -> Dict: ...
+    @abstractmethod
+    def search_symbols(self, query: str) -> List[Dict]: ...
+    @abstractmethod
     def get_status(self) -> Dict: ...
 
 
@@ -121,6 +125,55 @@ class MockMarketProvider(MarketDataProvider):
             "chain": chain, "timestamp": datetime.now().isoformat(), "provider": "mock",
         }
 
+    def get_historical_data(self, symbol: str, period: str = "1mo") -> Dict:
+        import yfinance as yf
+        # Map Indian symbols to Yahoo Finance format
+        yf_symbol = symbol + ".NS" if not symbol.endswith(".NS") and not symbol.endswith(".BO") else symbol
+        if symbol == "NIFTY":
+            yf_symbol = "^NSEI"
+        elif symbol == "BANKNIFTY":
+            yf_symbol = "^NSEBANK"
+            
+        ticker = yf.Ticker(yf_symbol)
+        hist = ticker.history(period=period)
+        
+        data = []
+        for date, row in hist.iterrows():
+            data.append({
+                "date": date.strftime("%Y-%m-%d"),
+                "open": round(row["Open"], 2),
+                "high": round(row["High"], 2),
+                "low": round(row["Low"], 2),
+                "close": round(row["Close"], 2),
+                "volume": int(row["Volume"])
+            })
+            
+        return {
+            "symbol": symbol,
+            "period": period,
+            "data": data,
+            "provider": "yfinance"
+        }
+
+    def search_symbols(self, query: str) -> List[Dict]:
+        query = query.upper()
+        # Top 15 Nifty stocks for fast lookup + the 3 defaults
+        top_stocks = [
+            "NIFTY", "BANKNIFTY", "RELIANCE", "TCS", "HDFCBANK", "INFY",
+            "ICICIBANK", "SBIN", "BHARTIARTL", "ITC", "HINDUNILVR", "LT",
+            "BAJFINANCE", "ASIANPAINT", "MARUTI", "TATAMOTORS"
+        ]
+        results = []
+        for s in top_stocks:
+            if query in s:
+                results.append({"symbol": s, "name": s, "exchange": "NSE"})
+        
+        # If no match in top list, just echo it back so user can try searching it directly
+        if not results and len(query) > 2:
+            results.append({"symbol": query, "name": f"{query} (Custom)", "exchange": "NSE"})
+            
+        return results
+
     def get_status(self) -> Dict:
         return {"provider": "mock", "connected": True, "symbols": list(self.INSTRUMENTS.keys()),
                 "message": "Mock data provider — realistic simulated market data"}
@@ -152,6 +205,42 @@ class KiteMarketProvider(MarketDataProvider):
 
     def get_option_chain(self, symbol: str, expiry: Optional[str] = None) -> Dict:
         raise NotImplementedError("Live option chain requires NFO instrument filtering")
+
+    def get_historical_data(self, symbol: str, period: str = "1mo") -> Dict:
+        import yfinance as yf
+        yf_symbol = symbol + ".NS" if not symbol.endswith(".NS") and not symbol.endswith(".BO") else symbol
+        if symbol == "NIFTY": yf_symbol = "^NSEI"
+        elif symbol == "BANKNIFTY": yf_symbol = "^NSEBANK"
+            
+        ticker = yf.Ticker(yf_symbol)
+        hist = ticker.history(period=period)
+        
+        data = []
+        for date, row in hist.iterrows():
+            data.append({
+                "date": date.strftime("%Y-%m-%d"),
+                "open": round(row["Open"], 2), "high": round(row["High"], 2),
+                "low": round(row["Low"], 2), "close": round(row["Close"], 2),
+                "volume": int(row["Volume"])
+            })
+        return {"symbol": symbol, "period": period, "data": data, "provider": "yfinance"}
+
+    def search_symbols(self, query: str) -> List[Dict]:
+        query = query.upper()
+        if self._kite:
+            try:
+                # Live kite search if instruments are loaded, else fallback
+                # Kite doesn't have a direct search endpoint without downloading the full instrument list.
+                pass
+            except Exception as e:
+                logger.error(f"Kite search failed: {e}")
+        
+        # Fallback to static list
+        top_stocks = ["NIFTY", "BANKNIFTY", "RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK", "SBIN", "BHARTIARTL", "ITC", "HINDUNILVR", "LT", "BAJFINANCE", "ASIANPAINT", "MARUTI", "TATAMOTORS"]
+        results = [{"symbol": s, "name": s, "exchange": "NSE"} for s in top_stocks if query in s]
+        if not results and len(query) > 2:
+            results.append({"symbol": query, "name": f"{query} (Custom)", "exchange": "NSE"})
+        return results
 
     def get_status(self) -> Dict:
         connected = self._kite is not None
