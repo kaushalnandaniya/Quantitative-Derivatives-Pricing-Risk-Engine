@@ -14,19 +14,35 @@ logger = logging.getLogger(__name__)
 try:
     from celery import Celery
     import os
+    import ssl
     CELERY_AVAILABLE = True
+
+    _redis_url = os.getenv("REDIS_URL", os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/1"))
+
+    # Upstash uses rediss:// (SSL) — Celery needs ssl_cert_reqs param in the URL
+    if _redis_url.startswith("rediss://") and "ssl_cert_reqs" not in _redis_url:
+        separator = "&" if "?" in _redis_url else "?"
+        _redis_url = f"{_redis_url}{separator}ssl_cert_reqs=CERT_NONE"
 
     celery_app = Celery(
         "quant_engine",
-        broker=os.getenv("REDIS_URL", os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/1")),
-        backend=os.getenv("REDIS_URL", os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/2")),
+        broker=_redis_url,
+        backend=_redis_url,
     )
+
+    # SSL transport options for rediss:// connections
+    _ssl_opts = {}
+    if _redis_url.startswith("rediss://"):
+        _ssl_opts = {"ssl_cert_reqs": ssl.CERT_NONE}
+
     celery_app.conf.update(
         task_serializer="json",
         result_serializer="json",
         accept_content=["json"],
         timezone="UTC",
         enable_utc=True,
+        broker_use_ssl=_ssl_opts if _ssl_opts else None,
+        redis_backend_use_ssl=_ssl_opts if _ssl_opts else None,
         task_routes={
             "tasks.compute_*": {"queue": "compute"},
             "tasks.report_*": {"queue": "reports"},
