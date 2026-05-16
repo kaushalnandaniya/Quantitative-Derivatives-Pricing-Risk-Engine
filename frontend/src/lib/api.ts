@@ -70,7 +70,10 @@ export interface LoginResponse {
 }
 
 export const authApi = {
-  register: (data: { email: string; password: string; full_name: string; role?: string }) =>
+  sendOtp: (email: string) =>
+    apiFetch<{ message: string; email: string }>("/auth/send-otp", { method: "POST", body: { email } }),
+
+  register: (data: { email: string; password: string; full_name: string; otp: string; role?: string }) =>
     apiFetch<UserData>("/auth/register", { method: "POST", body: data }),
 
   login: (email: string, password: string) =>

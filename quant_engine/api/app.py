@@ -199,7 +199,7 @@ def health():
         "tier": "3",
         "engine": "Quant Engine Platform",
         "endpoints": {
-            "auth": ["/auth/register", "/auth/login", "/auth/refresh", "/auth/me"],
+            "auth": ["/auth/send-otp", "/auth/register", "/auth/login", "/auth/refresh", "/auth/me"],
             "pricing": ["/price/black-scholes", "/price/monte-carlo", "/price/binomial"],
             "risk": ["/risk/portfolio"],
             "greeks": ["/greeks/calculate", "/greeks/portfolio"],
@@ -258,6 +258,17 @@ def deep_health():
 
 @app.on_event("startup")
 def on_startup():
-    from db.database import init_db
+    from db.database import init_db, SessionLocal
     init_db()
+
+    # Initialize Bloom filter with existing registered emails
+    try:
+        from services.bloom_filter import load_existing_emails
+        db = SessionLocal()
+        count = load_existing_emails(db)
+        db.close()
+        logger.info(f"Bloom filter loaded {count} emails on startup")
+    except Exception as e:
+        logger.warning(f"Bloom filter initialization skipped: {e}")
+
     logger.info("Quant Engine Platform v3.0.0 (Tier 3) started")

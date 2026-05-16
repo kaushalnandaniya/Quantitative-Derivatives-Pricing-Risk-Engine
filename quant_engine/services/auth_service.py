@@ -1,11 +1,12 @@
 """
 Authentication Service
 ========================
-JWT token management and password hashing.
+JWT token management, password hashing, and OTP verification.
 """
 
 import os
 import logging
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -22,8 +23,38 @@ JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_EXPIRE_MIN = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 REFRESH_EXPIRE_DAYS = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 
+OTP_EXPIRE_SECONDS = 300  # 5 minutes
+
 import hashlib
 import bcrypt
+
+
+# =============================================================================
+# Redis Helper (for OTP storage)
+# =============================================================================
+
+_redis_client = None
+
+
+def _get_redis():
+    """Lazily connect to Redis for OTP storage."""
+    global _redis_client
+    if _redis_client is not None:
+        return _redis_client
+
+    import redis
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    try:
+        _redis_client = redis.from_url(redis_url, decode_responses=True)
+        _redis_client.ping()
+        return _redis_client
+    except Exception as e:
+        logger.warning(f"Redis unavailable for OTP storage: {e}")
+        return None
+
+
+# In-memory fallback for OTP when Redis is unavailable (dev only)
+_otp_fallback: dict[str, tuple[str, float]] = {}
 
 
 # =============================================================================
@@ -75,6 +106,76 @@ def decode_token(token: str) -> Optional[dict]:
     except JWTError as e:
         logger.debug(f"JWT decode failed: {e}")
         return None
+
+
+# =============================================================================
+# OTP Generation & Verification
+# =============================================================================
+
+def generate_otp() -> str:
+    """Generate a cryptographically secure 6-digit OTP."""
+    return f"{secrets.randbelow(900000) + 100000}"
+
+
+def store_otp(email: str, otp: str) -> bool:
+    """
+    Store the OTP in Redis with a 5-minute TTL.
+    Falls back to in-memory dict if Redis is unavailable.
+    """
+    email_key = f"otp:{email.lower().strip()}"
+    r = _get_redis()
+
+    if r is not None:
+        try:
+            r.setex(email_key, OTP_EXPIRE_SECONDS, otp)
+            logger.info(f"OTP stored in Redis for {email}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to store OTP in Redis: {e}")
+
+    # Fallback: in-memory storage (dev only)
+    import time
+    _otp_fallback[email_key] = (otp, time.time() + OTP_EXPIRE_SECONDS)
+    logger.warning(f"OTP stored in-memory fallback for {email}")
+    return True
+
+
+def verify_otp(email: str, otp: str) -> bool:
+    """
+    Verify the OTP against the stored value.
+    Deletes the OTP after successful verification (one-time use).
+    """
+    email_key = f"otp:{email.lower().strip()}"
+    r = _get_redis()
+
+    if r is not None:
+        try:
+            stored_otp = r.get(email_key)
+            if stored_otp and stored_otp == otp:
+                r.delete(email_key)
+                logger.info(f"OTP verified for {email}")
+                return True
+            logger.warning(f"OTP mismatch for {email}")
+            return False
+        except Exception as e:
+            logger.error(f"Failed to verify OTP in Redis: {e}")
+
+    # Fallback: check in-memory
+    import time
+    entry = _otp_fallback.get(email_key)
+    if entry:
+        stored_otp, expires_at = entry
+        if time.time() < expires_at and stored_otp == otp:
+            del _otp_fallback[email_key]
+            logger.info(f"OTP verified (in-memory) for {email}")
+            return True
+        if time.time() >= expires_at:
+            del _otp_fallback[email_key]
+            logger.warning(f"OTP expired for {email}")
+        else:
+            logger.warning(f"OTP mismatch (in-memory) for {email}")
+
+    return False
 
 
 # =============================================================================

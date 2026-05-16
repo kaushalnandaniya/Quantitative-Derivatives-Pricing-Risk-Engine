@@ -13,7 +13,8 @@ interface AuthState {
   isLoading: boolean;
 
   login: (email: string, password: string) => Promise<void>;
-  register: (data: { email: string; password: string; full_name: string; role?: string }) => Promise<void>;
+  sendOtp: (email: string) => Promise<void>;
+  register: (data: { email: string; password: string; full_name: string; otp: string; role?: string }) => Promise<void>;
   logout: () => void;
   restore: () => Promise<void>;
 }
@@ -35,6 +36,10 @@ export const useAuth = create<AuthState>((set, get) => ({
       refreshToken: res.refresh_token,
       isAuthenticated: true,
     });
+  },
+
+  sendOtp: async (email) => {
+    await authApi.sendOtp(email);
   },
 
   register: async (data) => {
