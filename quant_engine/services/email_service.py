@@ -1,14 +1,17 @@
 """
-Email Service — OTP Delivery via Resend (HTTP API)
+Email Service — OTP Delivery via Brevo (HTTP API)
 =====================================================
-Sends OTP verification emails using Resend's HTTP API.
+Sends OTP verification emails using Brevo's (Sendinblue) HTTP API.
 This works on all hosting platforms (including Render free tier)
 because it uses HTTPS instead of SMTP.
 
+Free tier: 300 emails/day. Send from any verified sender email.
+
 Setup:
-    1. Sign up at https://resend.com (free, no credit card)
-    2. Get your API key from the dashboard
-    3. Set RESEND_API_KEY environment variable on Render
+    1. Sign up at https://www.brevo.com (free, no credit card)
+    2. Verify your sender email in Settings → Senders
+    3. Get your API key from Settings → SMTP & API → API Keys
+    4. Set BREVO_API_KEY environment variable on Render
 """
 
 import os
@@ -16,8 +19,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
-RESEND_FROM_EMAIL = os.getenv("RESEND_FROM_EMAIL", "Quant Engine <onboarding@resend.dev>")
+BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
+SENDER_EMAIL = os.getenv("SENDER_EMAIL", "kaushalnandania086@gmail.com")
+SENDER_NAME = os.getenv("SENDER_NAME", "Quant Engine Platform")
 
 
 def _build_otp_html(otp: str, recipient_email: str) -> str:
@@ -84,15 +88,15 @@ def _build_otp_html(otp: str, recipient_email: str) -> str:
 
 def send_otp_email(recipient: str, otp: str) -> bool:
     """
-    Send the OTP verification email via Resend HTTP API.
+    Send the OTP verification email via Brevo HTTP API.
 
     Returns True if sent successfully, False otherwise.
-    Falls back to logging the OTP if Resend API key is not configured.
+    Falls back to logging the OTP if Brevo API key is not configured.
     """
-    if not RESEND_API_KEY:
+    if not BREVO_API_KEY:
         logger.warning(
-            f"RESEND_API_KEY not configured. OTP for {recipient}: {otp} "
-            "(Set RESEND_API_KEY environment variable to enable email sending)"
+            f"BREVO_API_KEY not configured. OTP for {recipient}: {otp} "
+            "(Set BREVO_API_KEY environment variable to enable email sending)"
         )
         return True  # Return True so the flow continues in dev
 
@@ -100,27 +104,30 @@ def send_otp_email(recipient: str, otp: str) -> bool:
 
     try:
         resp = req_lib.post(
-            "https://api.resend.com/emails",
+            "https://api.brevo.com/v3/smtp/email",
             headers={
-                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "api-key": BREVO_API_KEY,
                 "Content-Type": "application/json",
-                "User-Agent": "QuantEngine/3.0",
+                "Accept": "application/json",
             },
             json={
-                "from": RESEND_FROM_EMAIL,
-                "to": [recipient],
+                "sender": {
+                    "name": SENDER_NAME,
+                    "email": SENDER_EMAIL,
+                },
+                "to": [{"email": recipient}],
                 "subject": f"Your Quant Engine Verification Code: {otp}",
-                "html": _build_otp_html(otp, recipient),
+                "htmlContent": _build_otp_html(otp, recipient),
             },
             timeout=10,
         )
 
         if resp.status_code in (200, 201):
             result = resp.json()
-            logger.info(f"OTP email sent to {recipient} via Resend (id={result.get('id', 'unknown')})")
+            logger.info(f"OTP email sent to {recipient} via Brevo (messageId={result.get('messageId', 'unknown')})")
             return True
         else:
-            logger.error(f"Resend API error {resp.status_code} for {recipient}: {resp.text}")
+            logger.error(f"Brevo API error {resp.status_code} for {recipient}: {resp.text}")
             return False
 
     except Exception as e:
