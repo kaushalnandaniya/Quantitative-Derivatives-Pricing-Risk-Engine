@@ -24,6 +24,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+quant/
 
 # Next.js / Node
 frontend/node_modules/
