@@ -63,7 +63,7 @@ export default function MarketData() {
   useEffect(() => {
     if (!accessToken) return;
     marketApi.kiteStatus(accessToken)
-      .then(res => setKiteConnected(res.connected))
+      .then((res: any) => setKiteConnected(res.connected))
       .catch(() => setKiteConnected(false));
   }, [accessToken]);
 
@@ -77,7 +77,7 @@ export default function MarketData() {
     const timeout = setTimeout(() => {
       setIsSearching(true);
       marketApi.search(searchQuery, accessToken)
-        .then(res => setSearchResults(res.results || []))
+        .then((res: any) => setSearchResults(res.results || []))
         .catch(() => setSearchResults([]))
         .finally(() => setIsSearching(false));
     }, 500);

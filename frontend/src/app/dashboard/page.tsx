@@ -14,8 +14,8 @@ export default function DashboardOverview() {
   useEffect(() => {
     if (!accessToken) return;
     healthApi.check().then(setHealth).catch(() => {});
-    portfoliosApi.list(accessToken).then(d => setPortfolioCount(d.count)).catch(() => {});
-    tradesApi.list(accessToken).then(d => setTradeCount(d.count)).catch(() => {});
+    portfoliosApi.list(accessToken).then((d: any) => setPortfolioCount(d.count)).catch(() => {});
+    tradesApi.list(accessToken).then((d: any) => setTradeCount(d.count)).catch(() => {});
     tradesApi.positions(accessToken).then(setPositions).catch(() => {});
   }, [accessToken]);
 

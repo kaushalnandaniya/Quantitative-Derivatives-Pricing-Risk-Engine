@@ -11,4 +11,4 @@ celery -A core.celery_app worker --loglevel=info &
 
 echo "Starting FastAPI server..."
 # Render sets the PORT environment variable automatically
-uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-8000}
+uvicorn api.app:app --host 0.0.0.0 --port ${PORT:-8000}

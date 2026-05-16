@@ -43,7 +43,7 @@ jobs:
       - name: Check API starts
         run: |
           cd quant_engine
-          timeout 10 python -m uvicorn api.main:app --port 8000 &
+          timeout 10 python -m uvicorn api.app:app --port 8000 &
           sleep 5
           curl -f http://localhost:8000/health
 

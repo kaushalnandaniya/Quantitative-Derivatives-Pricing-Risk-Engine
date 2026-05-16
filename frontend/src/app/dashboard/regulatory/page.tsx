@@ -15,7 +15,7 @@ export default function RegulatoryPage() {
 
   useEffect(() => {
     if (!accessToken) return;
-    portfoliosApi.list(accessToken).then(res => {
+    portfoliosApi.list(accessToken).then((res: any) => {
       setPortfolios(res.portfolios);
       if (res.portfolios.length > 0) setSelectedPortfolio(res.portfolios[0].id);
     });

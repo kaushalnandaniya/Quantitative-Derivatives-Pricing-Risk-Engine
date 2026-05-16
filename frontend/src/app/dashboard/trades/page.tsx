@@ -15,7 +15,7 @@ export default function TradesPage() {
 
   const loadData = () => {
     if (!accessToken) return;
-    tradesApi.list(accessToken, filter || undefined).then(d => setTrades(d.trades));
+    tradesApi.list(accessToken, filter || undefined).then((d: any) => setTrades(d.trades));
     tradesApi.positions(accessToken).then(setPositions);
   };
 

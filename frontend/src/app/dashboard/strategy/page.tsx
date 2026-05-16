@@ -97,7 +97,7 @@ export default function StrategySimulator() {
                 <div className="card text-center py-4">
                   <div className="metric-label mb-1">Breakevens</div>
                   <div className="text-sm font-bold" style={{ fontFamily: "var(--font-mono)", color: "var(--color-accent-amber)" }}>
-                    {result.breakevens.map(b => b.toFixed(0)).join(" / ")}
+                    {result.breakevens.map((b: any) => Number(b).toFixed(0)).join(" / ")}
                   </div>
                 </div>
               </div>
@@ -108,7 +108,7 @@ export default function StrategySimulator() {
                 <table className="data-table">
                   <thead><tr><th>Side</th><th>Type</th><th>Strike</th><th>Premium</th></tr></thead>
                   <tbody>
-                    {result.legs.map((leg, i) => (
+                    {result.legs.map((leg: any, i: any) => (
                       <tr key={i}>
                         <td><span className={leg.side === "buy" ? "badge badge-green" : "badge badge-red"}>{leg.side}</span></td>
                         <td>{leg.type}</td>
