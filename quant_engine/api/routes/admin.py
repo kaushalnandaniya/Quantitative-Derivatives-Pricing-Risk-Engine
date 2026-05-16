@@ -26,6 +26,37 @@ router = APIRouter(prefix="/admin", tags=["Admin"])
 
 
 # =============================================================================
+# Bootstrap: One-time admin promotion (only works if NO admin exists)
+# =============================================================================
+
+@router.post("/bootstrap", summary="Bootstrap First Admin", status_code=200)
+def bootstrap_admin(db: Session = Depends(get_db)):
+    """
+    Promote the first registered user to admin.
+    Only works if there are ZERO admin users in the system.
+    This is a one-time setup endpoint.
+    """
+    existing_admin = db.query(User).filter(User.role == UserRole.admin).first()
+    if existing_admin:
+        raise HTTPException(403, "Admin already exists. Bootstrap disabled.")
+
+    first_user = db.query(User).order_by(User.created_at.asc()).first()
+    if not first_user:
+        raise HTTPException(404, "No users found in the system")
+
+    first_user.role = UserRole.admin
+    db.commit()
+    db.refresh(first_user)
+    logger.info(f"Bootstrap: {first_user.email} promoted to admin")
+    return {
+        "message": f"User '{first_user.email}' has been promoted to admin",
+        "user_id": first_user.id,
+        "email": first_user.email,
+        "role": "admin",
+    }
+
+
+# =============================================================================
 # Schemas
 # =============================================================================
 
