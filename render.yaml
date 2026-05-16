@@ -1,11 +1,23 @@
+databases:
+  - name: quant-db
+    plan: free
+    databaseName: quant
+
 services:
   - type: web
-    name: quant-engine
+    name: quant-backend
     env: python
-    region: ohio
     plan: free
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "uvicorn api.app:app --host 0.0.0.0 --port $PORT"
+    buildCommand: "cd quant_engine && pip install -r requirements.txt"
+    startCommand: "cd quant_engine && bash render-start.sh"
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.12.0
+      - key: DATABASE_URL
+        fromDatabase:
+          name: quant-db
+          property: connectionString
+      - key: REDIS_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ENVIRONMENT
+        value: production
