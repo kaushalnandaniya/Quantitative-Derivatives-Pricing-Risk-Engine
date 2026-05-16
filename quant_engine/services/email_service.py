@@ -1,31 +1,26 @@
 """
-Email Service — OTP Delivery via SMTP
-=========================================
-Sends a beautifully formatted OTP verification email using
-standard Python smtplib. Falls back to logging the OTP if
-SMTP is not configured.
+Email Service — OTP Delivery via Resend (HTTP API)
+=====================================================
+Sends OTP verification emails using Resend's HTTP API.
+This works on all hosting platforms (including Render free tier)
+because it uses HTTPS instead of SMTP.
 
-Configure via environment variables:
-    SMTP_SERVER   — e.g. smtp.gmail.com
-    SMTP_PORT     — e.g. 587
-    SMTP_USERNAME — e.g. epsilonenterprise7@gmail.com
-    SMTP_PASSWORD — Gmail App Password (NOT your login password)
+Setup:
+    1. Sign up at https://resend.com (free, no credit card)
+    2. Get your API key from the dashboard
+    3. Set RESEND_API_KEY environment variable on Render
 """
 
 import os
 import logging
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import json
+from urllib.request import Request, urlopen
+from urllib.error import URLError, HTTPError
 
 logger = logging.getLogger(__name__)
 
-# SMTP configuration from environment
-SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USERNAME = os.getenv("SMTP_USERNAME", "")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "Quant Engine Platform")
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+RESEND_FROM_EMAIL = os.getenv("RESEND_FROM_EMAIL", "Quant Engine <onboarding@resend.dev>")
 
 
 def _build_otp_html(otp: str, recipient_email: str) -> str:
@@ -46,10 +41,10 @@ def _build_otp_html(otp: str, recipient_email: str) -> str:
                         <tr>
                             <td style="background: linear-gradient(135deg, #58a6ff 0%, #bc8cff 100%); padding: 32px; text-align:center;">
                                 <div style="font-size: 28px; font-weight: 800; color: #ffffff; letter-spacing: -0.5px;">
-                                    Q Quant Engine
+                                    Quant Engine
                                 </div>
                                 <div style="font-size: 14px; color: rgba(255,255,255,0.85); margin-top: 6px;">
-                                    Derivatives Pricing & Risk Platform
+                                    Derivatives Pricing &amp; Risk Platform
                                 </div>
                             </td>
                         </tr>
@@ -69,7 +64,7 @@ def _build_otp_html(otp: str, recipient_email: str) -> str:
                                     </div>
                                 </div>
                                 <p style="color:#8b949e; font-size:13px; line-height:1.5; margin:0;">
-                                    If you didn't request this code, you can safely ignore this email. Someone may have entered your email address by mistake.
+                                    If you didn't request this code, you can safely ignore this email.
                                 </p>
                             </td>
                         </tr>
@@ -92,45 +87,47 @@ def _build_otp_html(otp: str, recipient_email: str) -> str:
 
 def send_otp_email(recipient: str, otp: str) -> bool:
     """
-    Send the OTP verification email to the recipient.
-    
+    Send the OTP verification email via Resend HTTP API.
+
     Returns True if sent successfully, False otherwise.
-    Falls back to logging the OTP if SMTP is not configured.
+    Falls back to logging the OTP if Resend API key is not configured.
     """
-    if not SMTP_USERNAME or not SMTP_PASSWORD:
+    if not RESEND_API_KEY:
         logger.warning(
-            f"SMTP not configured. OTP for {recipient}: {otp} "
-            "(Set SMTP_USERNAME and SMTP_PASSWORD environment variables)"
+            f"RESEND_API_KEY not configured. OTP for {recipient}: {otp} "
+            "(Set RESEND_API_KEY environment variable to enable email sending)"
         )
         return True  # Return True so the flow continues in dev
 
     try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = f"Your Quant Engine Verification Code: {otp}"
-        msg["From"] = f"{SMTP_FROM_NAME} <{SMTP_USERNAME}>"
-        msg["To"] = recipient
+        payload = json.dumps({
+            "from": RESEND_FROM_EMAIL,
+            "to": [recipient],
+            "subject": f"Your Quant Engine Verification Code: {otp}",
+            "html": _build_otp_html(otp, recipient),
+        }).encode("utf-8")
 
-        # Plain text fallback
-        text_body = (
-            f"Your Quant Engine verification code is: {otp}\n\n"
-            f"This code expires in 5 minutes.\n\n"
-            f"If you didn't request this, ignore this email."
+        req = Request(
+            "https://api.resend.com/emails",
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
         )
-        msg.attach(MIMEText(text_body, "plain"))
-        msg.attach(MIMEText(_build_otp_html(otp, recipient), "html"))
 
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            server.login(SMTP_USERNAME, SMTP_PASSWORD)
-            server.sendmail(SMTP_USERNAME, recipient, msg.as_string())
+        with urlopen(req, timeout=10) as resp:
+            result = json.loads(resp.read().decode())
+            logger.info(f"OTP email sent to {recipient} via Resend (id={result.get('id', 'unknown')})")
+            return True
 
-        logger.info(f"OTP email sent to {recipient}")
-        return True
-
-    except smtplib.SMTPAuthenticationError as e:
-        logger.error(f"SMTP authentication failed: {e}")
+    except HTTPError as e:
+        body = e.read().decode() if e.fp else ""
+        logger.error(f"Resend API error {e.code} for {recipient}: {body}")
+        return False
+    except URLError as e:
+        logger.error(f"Resend network error for {recipient}: {e.reason}")
         return False
     except Exception as e:
         logger.error(f"Failed to send OTP email to {recipient}: {e}")
