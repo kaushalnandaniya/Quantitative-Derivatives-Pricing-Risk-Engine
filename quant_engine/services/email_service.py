@@ -13,9 +13,6 @@ Setup:
 
 import os
 import logging
-import json
-from urllib.request import Request, urlopen
-from urllib.error import URLError, HTTPError
 
 logger = logging.getLogger(__name__)
 
@@ -99,36 +96,33 @@ def send_otp_email(recipient: str, otp: str) -> bool:
         )
         return True  # Return True so the flow continues in dev
 
-    try:
-        payload = json.dumps({
-            "from": RESEND_FROM_EMAIL,
-            "to": [recipient],
-            "subject": f"Your Quant Engine Verification Code: {otp}",
-            "html": _build_otp_html(otp, recipient),
-        }).encode("utf-8")
+    import requests as req_lib
 
-        req = Request(
+    try:
+        resp = req_lib.post(
             "https://api.resend.com/emails",
-            data=payload,
             headers={
                 "Authorization": f"Bearer {RESEND_API_KEY}",
                 "Content-Type": "application/json",
+                "User-Agent": "QuantEngine/3.0",
             },
-            method="POST",
+            json={
+                "from": RESEND_FROM_EMAIL,
+                "to": [recipient],
+                "subject": f"Your Quant Engine Verification Code: {otp}",
+                "html": _build_otp_html(otp, recipient),
+            },
+            timeout=10,
         )
 
-        with urlopen(req, timeout=10) as resp:
-            result = json.loads(resp.read().decode())
+        if resp.status_code in (200, 201):
+            result = resp.json()
             logger.info(f"OTP email sent to {recipient} via Resend (id={result.get('id', 'unknown')})")
             return True
+        else:
+            logger.error(f"Resend API error {resp.status_code} for {recipient}: {resp.text}")
+            return False
 
-    except HTTPError as e:
-        body = e.read().decode() if e.fp else ""
-        logger.error(f"Resend API error {e.code} for {recipient}: {body}")
-        return False
-    except URLError as e:
-        logger.error(f"Resend network error for {recipient}: {e.reason}")
-        return False
     except Exception as e:
         logger.error(f"Failed to send OTP email to {recipient}: {e}")
         return False
