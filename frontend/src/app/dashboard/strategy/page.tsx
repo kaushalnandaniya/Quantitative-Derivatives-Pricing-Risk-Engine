@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/lib/auth";
 import { marketApi } from "@/lib/api";
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
+  Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
   Line, BarChart, Bar, ComposedChart, Legend
 } from "recharts";
 
@@ -222,8 +222,11 @@ export default function StrategyBuilder() {
     fetchChain(exp);
   };
 
+  // Snapshot current time once on mount (pure render)
+  const [now] = useState(() => Date.now());
+
   // Compute days to expiry and target T
-  const daysToExpiry = selExpiry ? Math.max(Math.round((new Date(selExpiry).getTime() - Date.now()) / 86400000), 1) : 7;
+  const daysToExpiry = selExpiry ? Math.max(Math.round((new Date(selExpiry).getTime() - now) / 86400000), 1) : 7;
   const targetT = targetDays > 0 ? (daysToExpiry - targetDays) / 365 : undefined;
 
   // Compute payoff
