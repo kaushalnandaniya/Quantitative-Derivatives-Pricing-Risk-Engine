@@ -43,6 +43,7 @@ from api.routes.alerts import router as alerts_router
 from api.routes.orders import router as orders_router
 from api.routes.admin import router as admin_router
 from api.routes.regulatory import router as regulatory_router
+from api.routes.backtest import router as backtest_router
 
 # =============================================================================
 # Logging Configuration
@@ -160,6 +161,7 @@ app.include_router(alerts_router)
 app.include_router(orders_router)
 app.include_router(admin_router)
 app.include_router(regulatory_router)
+app.include_router(backtest_router)
 
 # =============================================================================
 # Dashboard Mounting

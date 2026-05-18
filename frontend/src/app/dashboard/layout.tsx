@@ -21,6 +21,7 @@ const navGroups = [
       { href: "/dashboard/pricing", label: "Pricing Lab" },
       { href: "/dashboard/greeks", label: "Greeks" },
       { href: "/dashboard/strategy", label: "Strategy Builder" },
+      { href: "/dashboard/backtest", label: "Backtester" },
       { href: "/dashboard/scenario", label: "Scenarios" },
     ]
   },
