@@ -1,206 +1,330 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/lib/auth";
-import { strategiesApi, type StrategyResult } from "@/lib/api";
+import { marketApi } from "@/lib/api";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine
 } from "recharts";
 
-const STRATEGIES = [
-  { id: "long_call", name: "Buy Call", group: "Bullish" }, 
-  { id: "long_put", name: "Buy Put", group: "Bearish" },
-  { id: "bull_call_spread", name: "Bull Call Spread", group: "Bullish" }, 
-  { id: "bear_put_spread", name: "Bear Put Spread", group: "Bearish" },
-  { id: "straddle", name: "Straddle", group: "Neutral" }, 
-  { id: "strangle", name: "Strangle", group: "Neutral" },
-  { id: "iron_condor", name: "Iron Condor", group: "Neutral" }, 
-  { id: "butterfly", name: "Butterfly", group: "Neutral" },
+interface ChainRow {
+  strike: number;
+  call: { price: number; iv: number; delta: number; oi: number };
+  put: { price: number; iv: number; delta: number; oi: number };
+}
+
+interface Leg {
+  type: "call" | "put";
+  strike: number;
+  price: number;
+  iv: number;
+  qty: number; // positive = buy, negative = sell
+}
+
+const READY_MADE = [
+  { id: "buy_call", name: "Buy Call", cat: "Bullish", build: (atm: number, chain: ChainRow[]) => {
+    const row = chain.find(r => r.strike === atm) || chain[Math.floor(chain.length/2)];
+    return [{ type: "call" as const, strike: row.strike, price: row.call.price, iv: row.call.iv, qty: 1 }];
+  }},
+  { id: "sell_put", name: "Sell Put", cat: "Bullish", build: (atm: number, chain: ChainRow[]) => {
+    const row = chain.find(r => r.strike === atm) || chain[Math.floor(chain.length/2)];
+    return [{ type: "put" as const, strike: row.strike, price: row.put.price, iv: row.put.iv, qty: -1 }];
+  }},
+  { id: "bull_call_spread", name: "Bull Call Spread", cat: "Bullish", build: (atm: number, chain: ChainRow[]) => {
+    const idx = chain.findIndex(r => r.strike === atm);
+    const lo = chain[Math.max(idx, 0)];
+    const hi = chain[Math.min(idx + 2, chain.length - 1)];
+    return [
+      { type: "call" as const, strike: lo.strike, price: lo.call.price, iv: lo.call.iv, qty: 1 },
+      { type: "call" as const, strike: hi.strike, price: hi.call.price, iv: hi.call.iv, qty: -1 },
+    ];
+  }},
+  { id: "bear_put_spread", name: "Bear Put Spread", cat: "Bearish", build: (atm: number, chain: ChainRow[]) => {
+    const idx = chain.findIndex(r => r.strike === atm);
+    const hi = chain[Math.max(idx, 0)];
+    const lo = chain[Math.max(idx - 2, 0)];
+    return [
+      { type: "put" as const, strike: hi.strike, price: hi.put.price, iv: hi.put.iv, qty: 1 },
+      { type: "put" as const, strike: lo.strike, price: lo.put.price, iv: lo.put.iv, qty: -1 },
+    ];
+  }},
+  { id: "straddle", name: "Long Straddle", cat: "Neutral", build: (atm: number, chain: ChainRow[]) => {
+    const row = chain.find(r => r.strike === atm) || chain[Math.floor(chain.length/2)];
+    return [
+      { type: "call" as const, strike: row.strike, price: row.call.price, iv: row.call.iv, qty: 1 },
+      { type: "put" as const, strike: row.strike, price: row.put.price, iv: row.put.iv, qty: 1 },
+    ];
+  }},
+  { id: "strangle", name: "Long Strangle", cat: "Neutral", build: (atm: number, chain: ChainRow[]) => {
+    const idx = chain.findIndex(r => r.strike === atm);
+    const hiC = chain[Math.min(idx + 2, chain.length - 1)];
+    const loP = chain[Math.max(idx - 2, 0)];
+    return [
+      { type: "call" as const, strike: hiC.strike, price: hiC.call.price, iv: hiC.call.iv, qty: 1 },
+      { type: "put" as const, strike: loP.strike, price: loP.put.price, iv: loP.put.iv, qty: 1 },
+    ];
+  }},
+  { id: "iron_condor", name: "Iron Condor", cat: "Neutral", build: (atm: number, chain: ChainRow[]) => {
+    const idx = chain.findIndex(r => r.strike === atm);
+    const p1 = chain[Math.max(idx - 4, 0)];
+    const p2 = chain[Math.max(idx - 2, 0)];
+    const c1 = chain[Math.min(idx + 2, chain.length - 1)];
+    const c2 = chain[Math.min(idx + 4, chain.length - 1)];
+    return [
+      { type: "put" as const, strike: p1.strike, price: p1.put.price, iv: p1.put.iv, qty: 1 },
+      { type: "put" as const, strike: p2.strike, price: p2.put.price, iv: p2.put.iv, qty: -1 },
+      { type: "call" as const, strike: c1.strike, price: c1.call.price, iv: c1.call.iv, qty: -1 },
+      { type: "call" as const, strike: c2.strike, price: c2.call.price, iv: c2.call.iv, qty: 1 },
+    ];
+  }},
+  { id: "butterfly", name: "Butterfly", cat: "Neutral", build: (atm: number, chain: ChainRow[]) => {
+    const idx = chain.findIndex(r => r.strike === atm);
+    const lo = chain[Math.max(idx - 2, 0)];
+    const mid = chain[idx] || chain[Math.floor(chain.length/2)];
+    const hi = chain[Math.min(idx + 2, chain.length - 1)];
+    return [
+      { type: "call" as const, strike: lo.strike, price: lo.call.price, iv: lo.call.iv, qty: 1 },
+      { type: "call" as const, strike: mid.strike, price: mid.call.price, iv: mid.call.iv, qty: -2 },
+      { type: "call" as const, strike: hi.strike, price: hi.call.price, iv: hi.call.iv, qty: 1 },
+    ];
+  }},
 ];
+
+function computePayoff(legs: Leg[], spot: number, lotSize: number, nPoints = 100) {
+  if (legs.length === 0) return { spots: [], pnl: [], maxProfit: 0, maxLoss: 0, breakevens: [] as number[] };
+  const strikes = legs.map(l => l.strike);
+  const minK = Math.min(...strikes);
+  const maxK = Math.max(...strikes);
+  const range = Math.max(maxK - minK, spot * 0.1);
+  const lo = Math.max(minK - range * 1.5, 0);
+  const hi = maxK + range * 1.5;
+
+  const premium = legs.reduce((sum, l) => sum + l.price * l.qty * lotSize, 0);
+  const spots: number[] = [];
+  const pnl: number[] = [];
+
+  for (let i = 0; i < nPoints; i++) {
+    const s = lo + (hi - lo) * i / (nPoints - 1);
+    spots.push(Math.round(s * 100) / 100);
+    let payoff = 0;
+    for (const leg of legs) {
+      const intrinsic = leg.type === "call" ? Math.max(s - leg.strike, 0) : Math.max(leg.strike - s, 0);
+      payoff += intrinsic * leg.qty * lotSize;
+    }
+    pnl.push(Math.round((payoff - premium) * 100) / 100);
+  }
+
+  const maxProfit = Math.max(...pnl);
+  const maxLoss = Math.min(...pnl);
+  const breakevens: number[] = [];
+  for (let i = 0; i < pnl.length - 1; i++) {
+    if (pnl[i] * pnl[i + 1] < 0) {
+      const x = spots[i] + (spots[i + 1] - spots[i]) * Math.abs(pnl[i]) / (Math.abs(pnl[i]) + Math.abs(pnl[i + 1]));
+      breakevens.push(Math.round(x * 10) / 10);
+    }
+  }
+  return { spots, pnl, maxProfit, maxLoss, breakevens };
+}
 
 export default function StrategyBuilder() {
   const { accessToken } = useAuth();
+  const [symbol, setSymbol] = useState("NIFTY");
+  const [spot, setSpot] = useState(0);
+  const [lotSize, setLotSize] = useState(25);
+  const [chain, setChain] = useState<ChainRow[]>([]);
+  const [expiries, setExpiries] = useState<string[]>([]);
+  const [selExpiry, setSelExpiry] = useState("");
+  const [atm, setAtm] = useState(0);
+  const [legs, setLegs] = useState<Leg[]>([]);
   const [stratId, setStratId] = useState("straddle");
-  const [form, setForm] = useState({ S: "24000", K: "24000", T: "0.08", r: "0.069", sigma: "0.14", lot_size: "1" });
-  const [result, setResult] = useState<StrategyResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [lots, setLots] = useState(1);
 
-  const simulate = async () => {
+  // Fetch chain
+  const fetchChain = useCallback(async (exp?: string) => {
     if (!accessToken) return;
     setLoading(true);
     try {
-      const res = await strategiesApi.simulate(
-        { strategy_id: stratId, S: +form.S, K: +form.K, T: +form.T, r: +form.r, sigma: +form.sigma, lot_size: +form.lot_size },
-        accessToken
-      );
-      setResult(res);
-    } catch {}
+      const q = await marketApi.quote(symbol, accessToken) as any;
+      setSpot(q.last_price);
+      setLotSize(q.lot_size || 25);
+
+      const url = exp ? `/market/option-chain/${symbol}?expiry=${exp}` : `/market/option-chain/${symbol}`;
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}${url}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const data = await res.json();
+      setChain(data.chain || []);
+      setExpiries(data.expiries_available || []);
+      if (!exp && data.expiry) setSelExpiry(data.expiry);
+      const atmK = data.chain?.length > 0
+        ? data.chain.reduce((prev: ChainRow, curr: ChainRow) => Math.abs(curr.strike - q.last_price) < Math.abs(prev.strike - q.last_price) ? curr : prev).strike
+        : 0;
+      setAtm(atmK);
+    } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  };
+  }, [accessToken, symbol]);
 
-  // Auto-simulate on mount or when strategy changes if we have a token
+  useEffect(() => { fetchChain(); }, [fetchChain]);
+
+  // Auto-build legs when strategy or chain changes
   useEffect(() => {
-    if (accessToken) simulate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stratId, accessToken]);
+    if (chain.length === 0 || atm === 0) return;
+    const tmpl = READY_MADE.find(s => s.id === stratId);
+    if (tmpl) {
+      setLegs(tmpl.build(atm, chain));
+    }
+  }, [stratId, chain, atm]);
 
-  // Prepare chart data
-  const chartData = result ? result.spots.map((spot, i) => ({
-    spot: Number(spot.toFixed(2)),
-    pnl: Number(result.pnl[i].toFixed(2))
-  })) : [];
-
-  // Calculate gradient offset for green/red split
-  const gradientOffset = () => {
-    if (!result) return 0;
-    const dataMax = result.max_profit;
-    const dataMin = result.max_loss;
-    if (dataMax <= 0) return 0;
-    if (dataMin >= 0) return 1;
-    return dataMax / (dataMax - dataMin);
+  const handleExpiryChange = (exp: string) => {
+    setSelExpiry(exp);
+    fetchChain(exp);
   };
-  const off = gradientOffset();
+
+  // Compute payoff
+  const payoff = computePayoff(legs, spot, lotSize * lots);
+  const chartData = payoff.spots.map((s, i) => ({ spot: s, pnl: payoff.pnl[i] }));
+  const premium = legs.reduce((sum, l) => sum + l.price * l.qty * lotSize * lots, 0);
+
+  // Gradient offset for green/red split
+  const off = payoff.maxProfit <= 0 ? 0 : payoff.maxLoss >= 0 ? 1 : payoff.maxProfit / (payoff.maxProfit - payoff.maxLoss);
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6">
-      
-      {/* LEFT SIDEBAR: BUILDER */}
-      <div className="w-full lg:w-[380px] flex-shrink-0 flex flex-col gap-4">
-        
-        {/* Controls Card */}
-        <div className="card shadow-sm h-full flex flex-col">
-          <div className="flex justify-between items-center border-b border-[var(--color-border-subtle)] pb-4 mb-4">
-            <h2 className="font-bold text-[var(--color-text-primary)]">Strategy Builder</h2>
-            <div className="text-xs font-semibold px-2 py-1 bg-[var(--color-bg-elevated)] rounded">Settings</div>
-          </div>
+    <div className="flex flex-col lg:flex-row gap-4">
+      {/* LEFT SIDEBAR */}
+      <div className="w-full lg:w-[400px] flex-shrink-0 flex flex-col gap-3">
 
-          <div className="mb-6">
-            <div className="flex justify-between items-center mb-3">
-              <span className="text-sm font-bold">Ready-made</span>
-              <span className="text-xs text-[var(--color-accent-blue)] cursor-pointer hover:underline">Learn Strategies</span>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-2">
-              {STRATEGIES.map(s => (
-                <button 
-                  key={s.id} 
-                  onClick={() => setStratId(s.id)}
-                  className={`border rounded flex flex-col items-center justify-center p-3 transition-colors ${
-                    stratId === s.id 
-                      ? "border-[var(--color-accent-blue)] bg-[rgba(41,98,255,0.05)] text-[var(--color-accent-blue)]" 
-                      : "border-[var(--color-border-subtle)] hover:border-[var(--color-border)] hover:bg-[var(--color-bg-hover)] text-[var(--color-text-secondary)]"
-                  }`}
-                >
-                  <span className="text-xs font-semibold text-center leading-tight">{s.name}</span>
-                </button>
-              ))}
+        {/* Symbol + Spot */}
+        <div className="card shadow-sm">
+          <div className="flex items-center gap-3 mb-3">
+            <select
+              className="input-field text-sm font-bold flex-1"
+              value={symbol}
+              onChange={e => { setSymbol(e.target.value); }}
+            >
+              <option value="NIFTY">NIFTY</option>
+              <option value="BANKNIFTY">BANKNIFTY</option>
+              <option value="RELIANCE">RELIANCE</option>
+            </select>
+            <div className="text-right">
+              <div className="font-mono font-bold text-lg text-[var(--color-text-primary)]">₹{spot.toLocaleString()}</div>
             </div>
           </div>
-
-          <div className="space-y-3 mb-6">
-            <h3 className="text-sm font-bold border-b border-[var(--color-border-subtle)] pb-2">Parameters</h3>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="label">Spot Price</label>
-                <input className="input-field" type="number" step="any" value={form.S} onChange={e => setForm({ ...form, S: e.target.value })} />
-              </div>
-              <div>
-                <label className="label">ATM Strike</label>
-                <input className="input-field" type="number" step="any" value={form.K} onChange={e => setForm({ ...form, K: e.target.value })} />
-              </div>
-              <div>
-                <label className="label">Expiry (Years)</label>
-                <input className="input-field" type="number" step="any" value={form.T} onChange={e => setForm({ ...form, T: e.target.value })} />
-              </div>
-              <div>
-                <label className="label">Volatility (σ)</label>
-                <input className="input-field" type="number" step="any" value={form.sigma} onChange={e => setForm({ ...form, sigma: e.target.value })} />
-              </div>
-              <div>
-                <label className="label">Risk-free Rate</label>
-                <input className="input-field" type="number" step="any" value={form.r} onChange={e => setForm({ ...form, r: e.target.value })} />
-              </div>
-              <div>
-                <label className="label">Lot Size</label>
-                <input className="input-field" type="number" step="1" value={form.lot_size} onChange={e => setForm({ ...form, lot_size: e.target.value })} />
-              </div>
-            </div>
-          </div>
-
-          <button onClick={simulate} className="btn-primary w-full py-3 text-[13px]" disabled={loading}>
-            {loading ? "Calculating..." : "Update Payoff Graph"}
-          </button>
-
-          {/* Important Info Disclaimer */}
-          <div className="mt-auto pt-6">
-            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border-subtle)] rounded p-4">
-              <h4 className="text-xs font-bold mb-1 flex items-center gap-1 text-[var(--color-text-primary)]">
-                Important info
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              </h4>
-              <p className="text-[11px] text-[var(--color-text-secondary)] leading-relaxed">
-                The profit and loss are projections, and they depend on premia, liquidity, IV, etc. While we make the best effort to ensure they are right, the actual numbers may vary.
-              </p>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-[var(--color-text-muted)] uppercase font-semibold">Expiry</span>
+            <select className="input-field text-xs flex-1" value={selExpiry} onChange={e => handleExpiryChange(e.target.value)}>
+              {expiries.map(e => <option key={e} value={e}>{e}</option>)}
+            </select>
+            <span className="text-[11px] text-[var(--color-text-muted)] uppercase font-semibold ml-2">Lots</span>
+            <div className="flex items-center gap-1">
+              <button className="px-2 py-1 rounded border border-[var(--color-border-subtle)] text-xs" onClick={() => setLots(Math.max(1, lots - 1))}>−</button>
+              <span className="font-mono text-sm w-6 text-center">{lots}</span>
+              <button className="px-2 py-1 rounded border border-[var(--color-border-subtle)] text-xs" onClick={() => setLots(lots + 1)}>+</button>
             </div>
           </div>
         </div>
+
+        {/* Strategy Selector */}
+        <div className="card shadow-sm">
+          <div className="flex justify-between items-center mb-3">
+            <span className="text-sm font-bold text-[var(--color-text-primary)]">Ready-made</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {READY_MADE.map(s => (
+              <button key={s.id} onClick={() => setStratId(s.id)}
+                className={`border rounded p-2.5 text-xs font-semibold text-center transition-colors ${
+                  stratId === s.id
+                    ? "border-[var(--color-accent-blue)] bg-[rgba(41,98,255,0.06)] text-[var(--color-accent-blue)]"
+                    : "border-[var(--color-border-subtle)] text-[var(--color-text-secondary)] hover:border-[var(--color-border)]"
+                }`}
+              >{s.name}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* Legs Table */}
+        <div className="card shadow-sm">
+          <h3 className="text-xs font-bold uppercase text-[var(--color-text-secondary)] tracking-wider mb-3">
+            {legs.length} selected — {READY_MADE.find(s => s.id === stratId)?.name}
+          </h3>
+          <div className="text-[10px] text-[var(--color-text-muted)] mb-2 grid grid-cols-6 gap-1 font-semibold uppercase">
+            <span>B/S</span><span>Expiry</span><span>Strike</span><span>Type</span><span>Lots</span><span className="text-right">Price</span>
+          </div>
+          {legs.map((leg, i) => (
+            <div key={i} className="grid grid-cols-6 gap-1 items-center py-1.5 border-t border-[var(--color-border-subtle)] text-xs">
+              <span>
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${leg.qty > 0 ? "bg-[rgba(8,153,129,0.1)] text-[var(--color-accent-green)]" : "bg-[rgba(242,54,69,0.1)] text-[var(--color-accent-red)]"}`}>
+                  {leg.qty > 0 ? "B" : "S"}
+                </span>
+              </span>
+              <span className="text-[var(--color-text-muted)] font-mono">{selExpiry.slice(5)}</span>
+              <span className="font-mono font-semibold">{leg.strike}</span>
+              <span className="uppercase">{leg.type === "call" ? "CE" : "PE"}</span>
+              <span className="font-mono">{Math.abs(leg.qty) * lots}</span>
+              <span className="text-right font-mono font-semibold">{leg.price.toFixed(2)}</span>
+            </div>
+          ))}
+          <div className="border-t border-[var(--color-border-subtle)] pt-2 mt-2 flex justify-between text-xs">
+            <span className="text-[var(--color-text-muted)]">Net Premium</span>
+            <span className={`font-mono font-bold ${premium > 0 ? "text-[var(--color-accent-red)]" : "text-[var(--color-accent-green)]"}`}>
+              {premium > 0 ? `Pay ₹${premium.toFixed(2)}` : `Receive ₹${Math.abs(premium).toFixed(2)}`}
+            </span>
+          </div>
+        </div>
+
+        {/* Important Info */}
+        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border-subtle)] rounded p-3">
+          <h4 className="text-[11px] font-bold mb-1 text-[var(--color-text-primary)]">Important info</h4>
+          <p className="text-[10px] text-[var(--color-text-secondary)] leading-relaxed">
+            The profit and loss are projections, and they depend on premia, liquidity, IV, etc. While we make the best effort to ensure they are right, the actual numbers may vary.
+          </p>
+        </div>
       </div>
 
-      {/* RIGHT MAIN AREA: ANALYSIS */}
-      <div className="flex-1 flex flex-col gap-4 min-w-0">
-        
-        {/* Top Metrics Row */}
-        {result ? (
-          <div className="card grid grid-cols-2 lg:grid-cols-5 gap-4 shadow-sm items-center">
-            <div>
-              <div className="text-[11px] font-semibold text-[var(--color-text-secondary)] mb-1 uppercase tracking-wide">Max Profit</div>
-              <div className="font-mono font-bold text-[15px] positive">
-                {result.max_profit > 1e6 ? "Unlimited" : `+₹${result.max_profit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`}
-              </div>
-            </div>
-            <div className="border-l border-[var(--color-border-subtle)] pl-4">
-              <div className="text-[11px] font-semibold text-[var(--color-text-secondary)] mb-1 uppercase tracking-wide">Max Loss</div>
-              <div className="font-mono font-bold text-[15px] negative">
-                {result.max_loss < -1e6 ? "Unlimited" : `-₹${Math.abs(result.max_loss).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`}
-              </div>
-            </div>
-            <div className="border-l border-[var(--color-border-subtle)] pl-4">
-              <div className="text-[11px] font-semibold text-[var(--color-text-secondary)] mb-1 uppercase tracking-wide">Breakeven</div>
-              <div className="font-mono font-bold text-[13px] text-[var(--color-text-primary)]">
-                {result.breakevens.length > 0 ? result.breakevens.map((b: any) => Number(b).toFixed(1)).join(" / ") : "None"}
-              </div>
-            </div>
-            <div className="border-l border-[var(--color-border-subtle)] pl-4">
-              <div className="text-[11px] font-semibold text-[var(--color-text-secondary)] mb-1 uppercase tracking-wide">Net Premium</div>
-              <div className="font-mono font-bold text-[15px]" style={{ color: result.entry_premium > 0 ? "var(--color-accent-red)" : "var(--color-accent-green)"}}>
-                {result.entry_premium > 0 ? `Pay ₹${result.entry_premium.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : `Receive ₹${Math.abs(result.entry_premium).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`}
-              </div>
-            </div>
-            <div className="border-l border-[var(--color-border-subtle)] pl-4">
-              <div className="text-[11px] font-semibold text-[var(--color-text-secondary)] mb-1 uppercase tracking-wide">Risk / Reward</div>
-              <div className="font-mono font-bold text-[15px] text-[var(--color-text-primary)]">
-                {result.max_loss < -1e6 || result.max_profit > 1e6 ? "N/A" : `1 : ${Math.abs(result.max_profit / result.max_loss).toFixed(2)}`}
-              </div>
+      {/* RIGHT MAIN AREA */}
+      <div className="flex-1 flex flex-col gap-3 min-w-0">
+
+        {/* Metrics Row */}
+        <div className="card grid grid-cols-2 lg:grid-cols-5 gap-3 shadow-sm">
+          <div>
+            <div className="text-[10px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wide mb-1">Max Profit</div>
+            <div className="font-mono font-bold text-sm" style={{ color: "var(--color-accent-green)" }}>
+              {payoff.maxProfit > 1e8 ? "Unlimited" : `+₹${payoff.maxProfit.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
             </div>
           </div>
-        ) : (
-          <div className="card h-20 flex items-center justify-center text-sm text-[var(--color-text-muted)]">Loading metrics...</div>
-        )}
-
-        {/* Chart Area */}
-        <div className="card flex-1 min-h-[400px] flex flex-col shadow-sm">
-          <div className="flex justify-between items-center mb-6">
-            <div className="flex gap-4 border-b border-[var(--color-border-subtle)] w-full">
-              <div className="px-1 py-2 text-sm font-bold border-b-2 border-[var(--color-accent-blue)] text-[var(--color-text-primary)]">Payoff Graph</div>
-              <div className="px-1 py-2 text-sm font-semibold text-[var(--color-text-muted)] cursor-not-allowed">P&L Table</div>
-              <div className="px-1 py-2 text-sm font-semibold text-[var(--color-text-muted)] cursor-not-allowed">Greeks</div>
+          <div className="border-l border-[var(--color-border-subtle)] pl-3">
+            <div className="text-[10px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wide mb-1">Max Loss</div>
+            <div className="font-mono font-bold text-sm" style={{ color: "var(--color-accent-red)" }}>
+              {payoff.maxLoss < -1e8 ? "Unlimited" : `-₹${Math.abs(payoff.maxLoss).toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
             </div>
           </div>
+          <div className="border-l border-[var(--color-border-subtle)] pl-3">
+            <div className="text-[10px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wide mb-1">Breakeven</div>
+            <div className="font-mono font-bold text-xs text-[var(--color-text-primary)]">
+              {payoff.breakevens.length > 0 ? payoff.breakevens.join(" / ") : "—"}
+            </div>
+          </div>
+          <div className="border-l border-[var(--color-border-subtle)] pl-3">
+            <div className="text-[10px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wide mb-1">Reward / Risk</div>
+            <div className="font-mono font-bold text-sm text-[var(--color-text-primary)]">
+              {payoff.maxLoss === 0 || payoff.maxProfit > 1e8 ? "N/A" : `1 : ${Math.abs(payoff.maxProfit / payoff.maxLoss).toFixed(2)}`}
+            </div>
+          </div>
+          <div className="border-l border-[var(--color-border-subtle)] pl-3">
+            <div className="text-[10px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wide mb-1">Lot Size</div>
+            <div className="font-mono font-bold text-sm text-[var(--color-text-primary)]">{lotSize}</div>
+          </div>
+        </div>
 
+        {/* Payoff Chart */}
+        <div className="card flex-1 min-h-[380px] flex flex-col shadow-sm">
+          <div className="flex gap-4 border-b border-[var(--color-border-subtle)] mb-4">
+            <div className="px-1 py-2 text-sm font-bold border-b-2 border-[var(--color-accent-blue)] text-[var(--color-text-primary)]">Payoff Graph</div>
+          </div>
           <div className="flex-1 w-full relative">
-            {chartData.length > 0 ? (
+            {chartData.length > 0 && !loading ? (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 20, bottom: 20 }}>
+                <AreaChart data={chartData} margin={{ top: 10, right: 20, left: 10, bottom: 20 }}>
                   <defs>
                     <linearGradient id="splitColor" x1="0" y1="0" x2="0" y2="1">
                       <stop offset={off} stopColor="var(--color-accent-green)" stopOpacity={0.2} />
@@ -208,109 +332,53 @@ export default function StrategyBuilder() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-subtle)" vertical={false} />
-                  <XAxis 
-                    dataKey="spot" 
-                    stroke="var(--color-text-muted)" 
-                    fontSize={11}
-                    tickFormatter={(val) => `₹${val.toLocaleString()}`}
-                    dy={10}
+                  <XAxis dataKey="spot" stroke="var(--color-text-muted)" fontSize={10} tickFormatter={v => `₹${Number(v).toLocaleString()}`} dy={8} />
+                  <YAxis stroke="var(--color-text-muted)" fontSize={10} tickFormatter={v => `₹${Number(v).toLocaleString()}`} dx={-4} />
+                  <Tooltip
+                    contentStyle={{ background: "var(--color-bg-card)", borderColor: "var(--color-border-subtle)", borderRadius: 6, fontSize: "11px" }}
+                    labelFormatter={v => `Spot: ₹${v}`}
+                    formatter={(v: any) => [`${Number(v) >= 0 ? "+" : ""}₹${Number(v).toLocaleString()}`, "P&L"]}
                   />
-                  <YAxis 
-                    stroke="var(--color-text-muted)" 
-                    fontSize={11}
-                    tickFormatter={(val) => `₹${val.toLocaleString()}`}
-                    dx={-5}
-                  />
-                  <Tooltip 
-                    contentStyle={{ background: "var(--color-bg-card)", borderColor: "var(--color-border-subtle)", borderRadius: 8, fontSize: '12px' }}
-                    labelFormatter={(val) => `Spot: ₹${val}`}
-                    formatter={(val: any) => [
-                      `${Number(val) >= 0 ? "+" : ""}₹${Number(val).toLocaleString(undefined, {minimumFractionDigits: 2})}`, 
-                      "Projected P&L"
-                    ]}
-                  />
-                  {/* Zero Line */}
                   <ReferenceLine y={0} stroke="var(--color-text-muted)" strokeDasharray="3 3" />
-                  {/* Spot Price Line */}
-                  <ReferenceLine x={+form.S} stroke="var(--color-accent-blue)" strokeDasharray="3 3">
-                  </ReferenceLine>
-                  
-                  <Area 
-                    type="monotone" 
-                    dataKey="pnl" 
-                    stroke="var(--color-text-primary)" 
-                    strokeWidth={2}
-                    fill="url(#splitColor)" 
-                    isAnimationActive={false}
-                  />
+                  <ReferenceLine x={spot} stroke="var(--color-accent-blue)" strokeDasharray="3 3" label={{ value: `Spot`, fill: "var(--color-accent-blue)", fontSize: 10 }} />
+                  <Area type="monotone" dataKey="pnl" stroke="var(--color-text-primary)" strokeWidth={2} fill="url(#splitColor)" isAnimationActive={false} />
                 </AreaChart>
               </ResponsiveContainer>
             ) : (
               <div className="absolute inset-0 flex items-center justify-center text-sm text-[var(--color-text-muted)]">
-                {loading ? "Calculating Payoff..." : "No data available"}
-              </div>
-            )}
-            
-            {/* Spot Label overlay */}
-            {chartData.length > 0 && (
-              <div className="absolute top-0 right-10 bg-[var(--color-bg-elevated)] border border-[var(--color-border-subtle)] px-3 py-1 rounded text-xs font-mono">
-                Spot: ₹{Number(form.S).toLocaleString()}
+                {loading ? "Loading option chain..." : "Select a strategy"}
               </div>
             )}
           </div>
         </div>
 
-        {/* Lower Data Tables */}
-        {result && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            
-            {/* Net Greeks */}
-            <div className="card shadow-sm">
-              <h3 className="font-semibold text-xs mb-3 text-[var(--color-text-secondary)] uppercase tracking-wider">Net Greeks Position</h3>
-              <table className="data-table">
-                <tbody>
-                  {Object.entries(result.greeks).map(([k, v]) => (
-                    <tr key={k}>
-                      <td className="capitalize font-semibold text-[var(--color-text-muted)]">{k}</td>
-                      <td className="text-right font-bold text-[var(--color-text-primary)]">{Number(v).toFixed(4)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Position Legs */}
-            <div className="card shadow-sm">
-              <h3 className="font-semibold text-xs mb-3 text-[var(--color-text-secondary)] uppercase tracking-wider">Strategy Legs</h3>
-              <table className="data-table text-xs">
-                <thead>
-                  <tr>
-                    <th>B/S</th>
-                    <th>Type</th>
-                    <th>Strike</th>
-                    <th>Lots</th>
+        {/* Strikewise IVs */}
+        {legs.length > 0 && (
+          <div className="card shadow-sm">
+            <h3 className="text-xs font-bold uppercase text-[var(--color-text-secondary)] tracking-wider mb-3">Strikewise IVs &amp; Greeks</h3>
+            <table className="data-table text-xs">
+              <thead>
+                <tr>
+                  <th>Strike</th><th>Expiry</th><th>Type</th><th>IV</th><th>Price</th><th>B/S</th>
+                </tr>
+              </thead>
+              <tbody>
+                {legs.map((leg, i) => (
+                  <tr key={i}>
+                    <td className="font-mono font-semibold">{leg.strike}</td>
+                    <td className="text-[var(--color-text-muted)]">{selExpiry}</td>
+                    <td className="uppercase">{leg.type === "call" ? "CE" : "PE"}</td>
+                    <td className="font-mono">{leg.iv.toFixed(1)}%</td>
+                    <td className="font-mono font-semibold">{leg.price.toFixed(2)}</td>
+                    <td>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${leg.qty > 0 ? "bg-[rgba(8,153,129,0.1)] text-[var(--color-accent-green)]" : "bg-[rgba(242,54,69,0.1)] text-[var(--color-accent-red)]"}`}>
+                        {leg.qty > 0 ? "BUY" : "SELL"}
+                      </span>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {result.legs.map((leg: any, i: number) => {
-                    const isBuy = leg.qty > 0;
-                    return (
-                    <tr key={i}>
-                      <td>
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${isBuy ? "bg-[rgba(41,98,255,0.1)] text-[var(--color-accent-blue)]" : "bg-[rgba(242,54,69,0.1)] text-[var(--color-accent-red)]"}`}>
-                          {isBuy ? "B" : "S"}
-                        </span>
-                      </td>
-                      <td className="uppercase font-semibold text-[var(--color-text-secondary)]">{leg.type}</td>
-                      <td className="font-mono">{leg.K}</td>
-                      <td className="text-right font-mono text-[var(--color-text-primary)]">{Math.abs(leg.qty)}</td>
-                    </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
