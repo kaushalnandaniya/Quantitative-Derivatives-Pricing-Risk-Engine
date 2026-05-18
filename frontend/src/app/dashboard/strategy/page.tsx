@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/lib/auth";
-import { marketApi } from "@/lib/api";
+import { marketApi, tradesApi } from "@/lib/api";
 import {
   Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
   Line, BarChart, Bar, ComposedChart, Legend
@@ -171,7 +171,10 @@ export default function StrategyBuilder() {
   const [sidebarTab, setSidebarTab] = useState<"ready" | "chain">("ready");
   const [customMode, setCustomMode] = useState(false);
   const [chartTab, setChartTab] = useState<"payoff" | "oi">("payoff");
-  const [targetDays, setTargetDays] = useState(0); // 0 = today
+  const [targetDays, setTargetDays] = useState(0);
+  const [showTradeConfirm, setShowTradeConfirm] = useState(false);
+  const [trading, setTrading] = useState(false);
+  const [tradeMsg, setTradeMsg] = useState(""); // 0 = today
 
   // Fetch chain
   const fetchChain = useCallback(async (exp?: string) => {
@@ -350,7 +353,61 @@ export default function StrategyBuilder() {
               {premium > 0 ? `Pay ₹${premium.toFixed(2)}` : `Receive ₹${Math.abs(premium).toFixed(2)}`}
             </span>
           </div>
+          {legs.length > 0 && (
+            <button onClick={() => { setTradeMsg(""); setShowTradeConfirm(true); }} className="btn-primary w-full mt-3 py-2.5 text-xs font-bold">Trade All</button>
+          )}
         </div>
+
+        {/* Trade Confirmation Modal */}
+        {showTradeConfirm && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" onClick={() => setShowTradeConfirm(false)}>
+            <div className="bg-[var(--color-bg-card)] border border-[var(--color-border-subtle)] rounded-lg p-5 w-[380px] max-w-[90vw] shadow-2xl" onClick={e => e.stopPropagation()}>
+              <h3 className="font-bold text-sm mb-3 text-[var(--color-text-primary)]">Confirm Trade</h3>
+              <div className="text-xs space-y-1 mb-3">
+                {legs.map((leg, i) => (
+                  <div key={i} className="flex justify-between">
+                    <span>{leg.qty > 0 ? "BUY" : "SELL"} {Math.abs(leg.qty) * lots} × {leg.type.toUpperCase()} {leg.strike}</span>
+                    <span className="font-mono">₹{leg.price.toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-between text-xs font-bold border-t border-[var(--color-border-subtle)] pt-2 mb-4">
+                <span>Total Premium</span>
+                <span className={premium > 0 ? "text-[var(--color-accent-red)]" : "text-[var(--color-accent-green)]"}>
+                  {premium > 0 ? `Pay ₹${premium.toFixed(2)}` : `Receive ₹${Math.abs(premium).toFixed(2)}`}
+                </span>
+              </div>
+              {tradeMsg && <div className={`text-xs mb-3 p-2 rounded ${tradeMsg.includes("✓") ? "bg-[rgba(8,153,129,0.1)] text-[var(--color-accent-green)]" : "bg-[rgba(242,54,69,0.1)] text-[var(--color-accent-red)]"}`}>{tradeMsg}</div>}
+              <div className="flex gap-2">
+                <button onClick={() => setShowTradeConfirm(false)} className="flex-1 py-2 rounded border border-[var(--color-border-subtle)] text-xs font-semibold">Cancel</button>
+                <button
+                  disabled={trading}
+                  onClick={async () => {
+                    if (!accessToken) return;
+                    setTrading(true);
+                    try {
+                      for (const leg of legs) {
+                        await tradesApi.book({
+                          side: leg.qty > 0 ? "buy" : "sell",
+                          option_type: leg.type,
+                          spot: spot,
+                          strike: leg.strike,
+                          T: daysToExpiry / 365,
+                          r: 0.069,
+                          sigma: leg.iv / 100,
+                          quantity: Math.abs(leg.qty) * lots,
+                        }, accessToken);
+                      }
+                      setTradeMsg(`✓ ${legs.length} leg(s) booked successfully`);
+                    } catch { setTradeMsg("✗ Failed to book trades"); }
+                    finally { setTrading(false); }
+                  }}
+                  className="flex-1 py-2 rounded bg-[var(--color-accent-green)] text-white text-xs font-bold"
+                >{trading ? "Booking..." : "Confirm & Book"}</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Important Info */}
         <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border-subtle)] rounded p-3">

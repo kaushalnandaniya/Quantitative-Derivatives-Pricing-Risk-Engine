@@ -223,3 +223,22 @@ body {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
 }
+
+/* ============================================================
+   Mobile Responsiveness
+   ============================================================ */
+@media (max-width: 768px) {
+  .card { padding: 12px; }
+  .data-table { font-size: 10px; }
+  .data-table th, .data-table td { padding: 6px 4px; }
+  .btn-primary, .btn-ghost { font-size: 11px; padding: 8px 12px; }
+  .input-field { font-size: 12px; padding: 8px; }
+  h1 { font-size: 1.25rem; }
+  h2 { font-size: 1rem; }
+}
+
+@media (max-width: 480px) {
+  .card { padding: 10px; border-radius: 8px; }
+  .data-table { font-size: 9px; }
+  .data-table th, .data-table td { padding: 4px 3px; }
+}
