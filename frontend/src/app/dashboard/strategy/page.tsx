@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/lib/auth";
 import { marketApi, tradesApi } from "@/lib/api";
+import { useMarketStream } from "@/hooks/useMarketStream";
 import {
   Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
   Line, BarChart, Bar, ComposedChart, Legend
@@ -237,6 +238,11 @@ export default function StrategyBuilder() {
   const chartData = payoff.spots.map((s, i) => ({ spot: s, pnl: payoff.pnl[i], pnlTarget: payoff.pnlTarget[i] ?? undefined }));
   const premium = legs.reduce((sum, l) => sum + l.price * l.qty * lotSize * lots, 0);
 
+  // WebSocket real-time spot updates
+  const { tick, connected: wsConnected } = useMarketStream(symbol);
+  const liveSpot = tick?.last_price ?? spot;
+  const liveChange = tick?.change_pct ?? 0;
+
   // OI data for bar chart
   const oiData = chain.map(row => ({ strike: row.strike, callOI: row.call.oi, putOI: row.put.oi }));
   const pcr = chain.length > 0 ? (chain.reduce((s, r) => s + r.put.oi, 0) / Math.max(chain.reduce((s, r) => s + r.call.oi, 0), 1)).toFixed(2) : "—";
@@ -262,7 +268,11 @@ export default function StrategyBuilder() {
               <option value="RELIANCE">RELIANCE</option>
             </select>
             <div className="text-right">
-              <div className="font-mono font-bold text-lg text-[var(--color-text-primary)]">₹{spot.toLocaleString()}</div>
+              <div className="font-mono font-bold text-lg text-[var(--color-text-primary)]">₹{liveSpot.toLocaleString()}</div>
+              <div className="flex items-center justify-end gap-1">
+                {wsConnected && <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent-green)] pulse"></span>}
+                <span className={`text-[10px] font-mono ${liveChange >= 0 ? "text-[var(--color-accent-green)]" : "text-[var(--color-accent-red)]"}`}>{liveChange >= 0 ? "+" : ""}{liveChange.toFixed(2)}%</span>
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
