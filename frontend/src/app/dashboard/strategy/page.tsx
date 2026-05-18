@@ -288,22 +288,25 @@ export default function StrategyBuilder() {
                     <th>B/S</th>
                     <th>Type</th>
                     <th>Strike</th>
-                    <th className="text-right">Price</th>
+                    <th>Lots</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {result.legs.map((leg: any, i: any) => (
+                  {result.legs.map((leg: any, i: number) => {
+                    const isBuy = leg.qty > 0;
+                    return (
                     <tr key={i}>
                       <td>
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${leg.side === "buy" ? "bg-[rgba(41,98,255,0.1)] text-[var(--color-accent-blue)]" : "bg-[rgba(242,54,69,0.1)] text-[var(--color-accent-red)]"}`}>
-                          {leg.side === "buy" ? "B" : "S"}
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${isBuy ? "bg-[rgba(41,98,255,0.1)] text-[var(--color-accent-blue)]" : "bg-[rgba(242,54,69,0.1)] text-[var(--color-accent-red)]"}`}>
+                          {isBuy ? "B" : "S"}
                         </span>
                       </td>
                       <td className="uppercase font-semibold text-[var(--color-text-secondary)]">{leg.type}</td>
-                      <td className="font-mono">{leg.strike}</td>
-                      <td className="text-right font-mono text-[var(--color-text-primary)]">₹{leg.premium.toFixed(2)}</td>
+                      <td className="font-mono">{leg.K}</td>
+                      <td className="text-right font-mono text-[var(--color-text-primary)]">{Math.abs(leg.qty)}</td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
