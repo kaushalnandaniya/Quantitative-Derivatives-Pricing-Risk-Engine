@@ -139,6 +139,8 @@ export default function StrategyBuilder() {
   const [stratId, setStratId] = useState("straddle");
   const [loading, setLoading] = useState(false);
   const [lots, setLots] = useState(1);
+  const [sidebarTab, setSidebarTab] = useState<"ready" | "chain">("ready");
+  const [customMode, setCustomMode] = useState(false);
 
   // Fetch chain
   const fetchChain = useCallback(async (exp?: string) => {
@@ -167,14 +169,22 @@ export default function StrategyBuilder() {
 
   useEffect(() => { fetchChain(); }, [fetchChain]);
 
-  // Auto-build legs when strategy or chain changes
+  // Auto-build legs when strategy or chain changes (only in ready-made mode)
   useEffect(() => {
-    if (chain.length === 0 || atm === 0) return;
+    if (customMode || chain.length === 0 || atm === 0) return;
     const tmpl = READY_MADE.find(s => s.id === stratId);
-    if (tmpl) {
-      setLegs(tmpl.build(atm, chain));
-    }
-  }, [stratId, chain, atm]);
+    if (tmpl) setLegs(tmpl.build(atm, chain));
+  }, [stratId, chain, atm, customMode]);
+
+  const addLeg = (row: ChainRow, type: "call" | "put") => {
+    setCustomMode(true);
+    const price = type === "call" ? row.call.price : row.put.price;
+    const iv = type === "call" ? row.call.iv : row.put.iv;
+    setLegs(prev => [...prev, { type, strike: row.strike, price, iv, qty: 1 }]);
+  };
+  const removeLeg = (idx: number) => setLegs(prev => prev.filter((_, i) => i !== idx));
+  const toggleLegSide = (idx: number) => setLegs(prev => prev.map((l, i) => i === idx ? { ...l, qty: -l.qty } : l));
+  const clearLegs = () => { setLegs([]); setCustomMode(false); };
 
   const handleExpiryChange = (exp: string) => {
     setSelExpiry(exp);
@@ -224,46 +234,74 @@ export default function StrategyBuilder() {
           </div>
         </div>
 
-        {/* Strategy Selector */}
+        {/* Sidebar Tabs */}
         <div className="card shadow-sm">
-          <div className="flex justify-between items-center mb-3">
-            <span className="text-sm font-bold text-[var(--color-text-primary)]">Ready-made</span>
+          <div className="flex gap-1 mb-3 border-b border-[var(--color-border-subtle)]">
+            <button onClick={() => setSidebarTab("ready")} className={`px-3 py-1.5 text-xs font-bold ${sidebarTab === "ready" ? "border-b-2 border-[var(--color-accent-blue)] text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)]"}`}>Ready-made</button>
+            <button onClick={() => setSidebarTab("chain")} className={`px-3 py-1.5 text-xs font-bold ${sidebarTab === "chain" ? "border-b-2 border-[var(--color-accent-blue)] text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)]"}`}>Option Chain</button>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            {READY_MADE.map(s => (
-              <button key={s.id} onClick={() => setStratId(s.id)}
-                className={`border rounded p-2.5 text-xs font-semibold text-center transition-colors ${
-                  stratId === s.id
-                    ? "border-[var(--color-accent-blue)] bg-[rgba(41,98,255,0.06)] text-[var(--color-accent-blue)]"
-                    : "border-[var(--color-border-subtle)] text-[var(--color-text-secondary)] hover:border-[var(--color-border)]"
-                }`}
-              >{s.name}</button>
-            ))}
-          </div>
+
+          {sidebarTab === "ready" ? (
+            <div className="grid grid-cols-2 gap-2">
+              {READY_MADE.map(s => (
+                <button key={s.id} onClick={() => { setCustomMode(false); setStratId(s.id); }}
+                  className={`border rounded p-2.5 text-xs font-semibold text-center transition-colors ${
+                    stratId === s.id && !customMode
+                      ? "border-[var(--color-accent-blue)] bg-[rgba(41,98,255,0.06)] text-[var(--color-accent-blue)]"
+                      : "border-[var(--color-border-subtle)] text-[var(--color-text-secondary)] hover:border-[var(--color-border)]"
+                  }`}
+                >{s.name}</button>
+              ))}
+            </div>
+          ) : (
+            <div className="max-h-[300px] overflow-y-auto">
+              <table className="data-table text-[10px] w-full">
+                <thead><tr><th>Strike</th><th className="text-center">CE ₹</th><th className="text-center">PE ₹</th></tr></thead>
+                <tbody>
+                  {chain.map(row => (
+                    <tr key={row.strike} className={row.strike === atm ? "bg-[rgba(41,98,255,0.05)]" : ""}>
+                      <td className="font-mono font-semibold">{row.strike}</td>
+                      <td className="text-center">
+                        <button onClick={() => addLeg(row, "call")} className="font-mono hover:text-[var(--color-accent-green)] hover:font-bold transition-colors px-1">{row.call.price.toFixed(1)}</button>
+                      </td>
+                      <td className="text-center">
+                        <button onClick={() => addLeg(row, "put")} className="font-mono hover:text-[var(--color-accent-red)] hover:font-bold transition-colors px-1">{row.put.price.toFixed(1)}</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         {/* Legs Table */}
         <div className="card shadow-sm">
-          <h3 className="text-xs font-bold uppercase text-[var(--color-text-secondary)] tracking-wider mb-3">
-            {legs.length} selected — {READY_MADE.find(s => s.id === stratId)?.name}
-          </h3>
-          <div className="text-[10px] text-[var(--color-text-muted)] mb-2 grid grid-cols-6 gap-1 font-semibold uppercase">
-            <span>B/S</span><span>Expiry</span><span>Strike</span><span>Type</span><span>Lots</span><span className="text-right">Price</span>
+          <div className="flex justify-between items-center mb-2">
+            <h3 className="text-xs font-bold uppercase text-[var(--color-text-secondary)] tracking-wider">
+              {legs.length} leg{legs.length !== 1 ? "s" : ""} {customMode ? "(Custom)" : `— ${READY_MADE.find(s => s.id === stratId)?.name || ""}`}
+            </h3>
+            {legs.length > 0 && <button onClick={clearLegs} className="text-[10px] text-[var(--color-accent-red)] hover:underline">Clear All</button>}
+          </div>
+          <div className="text-[10px] text-[var(--color-text-muted)] mb-1 grid grid-cols-7 gap-1 font-semibold uppercase">
+            <span>B/S</span><span>Expiry</span><span>Strike</span><span>Type</span><span>Lots</span><span className="text-right">Price</span><span></span>
           </div>
           {legs.map((leg, i) => (
-            <div key={i} className="grid grid-cols-6 gap-1 items-center py-1.5 border-t border-[var(--color-border-subtle)] text-xs">
+            <div key={i} className="grid grid-cols-7 gap-1 items-center py-1.5 border-t border-[var(--color-border-subtle)] text-xs">
               <span>
-                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${leg.qty > 0 ? "bg-[rgba(8,153,129,0.1)] text-[var(--color-accent-green)]" : "bg-[rgba(242,54,69,0.1)] text-[var(--color-accent-red)]"}`}>
+                <button onClick={() => toggleLegSide(i)} className={`px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer ${leg.qty > 0 ? "bg-[rgba(8,153,129,0.1)] text-[var(--color-accent-green)]" : "bg-[rgba(242,54,69,0.1)] text-[var(--color-accent-red)]"}`}>
                   {leg.qty > 0 ? "B" : "S"}
-                </span>
+                </button>
               </span>
               <span className="text-[var(--color-text-muted)] font-mono">{selExpiry.slice(5)}</span>
               <span className="font-mono font-semibold">{leg.strike}</span>
               <span className="uppercase">{leg.type === "call" ? "CE" : "PE"}</span>
               <span className="font-mono">{Math.abs(leg.qty) * lots}</span>
               <span className="text-right font-mono font-semibold">{leg.price.toFixed(2)}</span>
+              <span className="text-right"><button onClick={() => removeLeg(i)} className="text-[var(--color-text-muted)] hover:text-[var(--color-accent-red)] text-xs">✕</button></span>
             </div>
           ))}
+          {legs.length === 0 && <div className="py-4 text-center text-xs text-[var(--color-text-muted)]">Click a strategy or add legs from the chain</div>}
           <div className="border-t border-[var(--color-border-subtle)] pt-2 mt-2 flex justify-between text-xs">
             <span className="text-[var(--color-text-muted)]">Net Premium</span>
             <span className={`font-mono font-bold ${premium > 0 ? "text-[var(--color-accent-red)]" : "text-[var(--color-accent-green)]"}`}>
