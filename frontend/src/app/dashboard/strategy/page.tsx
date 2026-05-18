@@ -225,9 +225,7 @@ export default function StrategyBuilder() {
                     contentStyle={{ background: "var(--color-bg-card)", borderColor: "var(--color-border-subtle)", borderRadius: 8, fontSize: '12px' }}
                     labelFormatter={(val) => `Spot: ₹${val}`}
                     formatter={(val: any) => [
-                      <span key="1" className={Number(val) >= 0 ? "positive font-bold" : "negative font-bold"}>
-                        {Number(val) >= 0 ? "+" : ""}₹{Number(val).toLocaleString(undefined, {minimumFractionDigits: 2})}
-                      </span>, 
+                      `${Number(val) >= 0 ? "+" : ""}₹${Number(val).toLocaleString(undefined, {minimumFractionDigits: 2})}`, 
                       "Projected P&L"
                     ]}
                   />
