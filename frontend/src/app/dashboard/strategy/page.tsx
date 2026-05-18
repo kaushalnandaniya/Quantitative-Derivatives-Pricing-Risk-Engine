@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/lib/auth";
 import { marketApi } from "@/lib/api";
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
+  Line, BarChart, Bar, ComposedChart, Legend
 } from "recharts";
 
 interface ChainRow {
@@ -90,8 +91,24 @@ const READY_MADE = [
   }},
 ];
 
-function computePayoff(legs: Leg[], spot: number, lotSize: number, nPoints = 100) {
-  if (legs.length === 0) return { spots: [], pnl: [], maxProfit: 0, maxLoss: 0, breakevens: [] as number[] };
+// Client-side Black-Scholes for target-date pricing
+function cdf(x: number): number {
+  const a1 = 0.254829592, a2 = -0.284496736, a3 = 1.421413741, a4 = -1.453152027, a5 = 1.061405429, p = 0.3275911;
+  const sign = x < 0 ? -1 : 1;
+  const t = 1 / (1 + p * Math.abs(x));
+  const y = 1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x / 2);
+  return 0.5 * (1 + sign * y);
+}
+function bsPrice(S: number, K: number, T: number, r: number, sigma: number, type: "call" | "put"): number {
+  if (T <= 0) return type === "call" ? Math.max(S - K, 0) : Math.max(K - S, 0);
+  const d1 = (Math.log(S / K) + (r + sigma * sigma / 2) * T) / (sigma * Math.sqrt(T));
+  const d2 = d1 - sigma * Math.sqrt(T);
+  if (type === "call") return S * cdf(d1) - K * Math.exp(-r * T) * cdf(d2);
+  return K * Math.exp(-r * T) * cdf(-d2) - S * cdf(-d1);
+}
+
+function computePayoff(legs: Leg[], spot: number, lotSize: number, targetT?: number, r = 0.069, nPoints = 100) {
+  if (legs.length === 0) return { spots: [], pnl: [], pnlTarget: [] as number[], maxProfit: 0, maxLoss: 0, breakevens: [] as number[] };
   const strikes = legs.map(l => l.strike);
   const minK = Math.min(...strikes);
   const maxK = Math.max(...strikes);
@@ -102,16 +119,28 @@ function computePayoff(legs: Leg[], spot: number, lotSize: number, nPoints = 100
   const premium = legs.reduce((sum, l) => sum + l.price * l.qty * lotSize, 0);
   const spots: number[] = [];
   const pnl: number[] = [];
+  const pnlTarget: number[] = [];
 
   for (let i = 0; i < nPoints; i++) {
     const s = lo + (hi - lo) * i / (nPoints - 1);
     spots.push(Math.round(s * 100) / 100);
-    let payoff = 0;
+    // At expiry (intrinsic)
+    let payoffExpiry = 0;
+    let payoffTarget = 0;
     for (const leg of legs) {
       const intrinsic = leg.type === "call" ? Math.max(s - leg.strike, 0) : Math.max(leg.strike - s, 0);
-      payoff += intrinsic * leg.qty * lotSize;
+      payoffExpiry += intrinsic * leg.qty * lotSize;
+      // Target date pricing (BS)
+      if (targetT !== undefined && targetT > 0) {
+        const sigma = leg.iv / 100;
+        const bsVal = bsPrice(s, leg.strike, targetT, r, sigma, leg.type);
+        payoffTarget += bsVal * leg.qty * lotSize;
+      }
     }
-    pnl.push(Math.round((payoff - premium) * 100) / 100);
+    pnl.push(Math.round((payoffExpiry - premium) * 100) / 100);
+    if (targetT !== undefined && targetT > 0) {
+      pnlTarget.push(Math.round((payoffTarget - premium) * 100) / 100);
+    }
   }
 
   const maxProfit = Math.max(...pnl);
@@ -123,7 +152,7 @@ function computePayoff(legs: Leg[], spot: number, lotSize: number, nPoints = 100
       breakevens.push(Math.round(x * 10) / 10);
     }
   }
-  return { spots, pnl, maxProfit, maxLoss, breakevens };
+  return { spots, pnl, pnlTarget, maxProfit, maxLoss, breakevens };
 }
 
 export default function StrategyBuilder() {
@@ -141,6 +170,8 @@ export default function StrategyBuilder() {
   const [lots, setLots] = useState(1);
   const [sidebarTab, setSidebarTab] = useState<"ready" | "chain">("ready");
   const [customMode, setCustomMode] = useState(false);
+  const [chartTab, setChartTab] = useState<"payoff" | "oi">("payoff");
+  const [targetDays, setTargetDays] = useState(0); // 0 = today
 
   // Fetch chain
   const fetchChain = useCallback(async (exp?: string) => {
@@ -191,10 +222,18 @@ export default function StrategyBuilder() {
     fetchChain(exp);
   };
 
+  // Compute days to expiry and target T
+  const daysToExpiry = selExpiry ? Math.max(Math.round((new Date(selExpiry).getTime() - Date.now()) / 86400000), 1) : 7;
+  const targetT = targetDays > 0 ? (daysToExpiry - targetDays) / 365 : undefined;
+
   // Compute payoff
-  const payoff = computePayoff(legs, spot, lotSize * lots);
-  const chartData = payoff.spots.map((s, i) => ({ spot: s, pnl: payoff.pnl[i] }));
+  const payoff = computePayoff(legs, spot, lotSize * lots, targetT);
+  const chartData = payoff.spots.map((s, i) => ({ spot: s, pnl: payoff.pnl[i], pnlTarget: payoff.pnlTarget[i] ?? undefined }));
   const premium = legs.reduce((sum, l) => sum + l.price * l.qty * lotSize * lots, 0);
+
+  // OI data for bar chart
+  const oiData = chain.map(row => ({ strike: row.strike, callOI: row.call.oi, putOI: row.put.oi }));
+  const pcr = chain.length > 0 ? (chain.reduce((s, r) => s + r.put.oi, 0) / Math.max(chain.reduce((s, r) => s + r.call.oi, 0), 1)).toFixed(2) : "—";
 
   // Gradient offset for green/red split
   const off = payoff.maxProfit <= 0 ? 0 : payoff.maxLoss >= 0 ? 1 : payoff.maxProfit / (payoff.maxProfit - payoff.maxLoss);
@@ -354,40 +393,77 @@ export default function StrategyBuilder() {
           </div>
         </div>
 
-        {/* Payoff Chart */}
+        {/* Chart Area */}
         <div className="card flex-1 min-h-[380px] flex flex-col shadow-sm">
           <div className="flex gap-4 border-b border-[var(--color-border-subtle)] mb-4">
-            <div className="px-1 py-2 text-sm font-bold border-b-2 border-[var(--color-accent-blue)] text-[var(--color-text-primary)]">Payoff Graph</div>
+            <button onClick={() => setChartTab("payoff")} className={`px-1 py-2 text-sm font-bold ${chartTab === "payoff" ? "border-b-2 border-[var(--color-accent-blue)] text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)]"}`}>Payoff Graph</button>
+            <button onClick={() => setChartTab("oi")} className={`px-1 py-2 text-sm font-bold ${chartTab === "oi" ? "border-b-2 border-[var(--color-accent-blue)] text-[var(--color-text-primary)]" : "text-[var(--color-text-muted)]"}`}>Open Interest</button>
+            <div className="ml-auto flex items-center gap-2 text-[10px] text-[var(--color-text-muted)]">
+              <span>PCR: <strong className="text-[var(--color-text-primary)]">{pcr}</strong></span>
+            </div>
           </div>
-          <div className="flex-1 w-full relative">
-            {chartData.length > 0 && !loading ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData} margin={{ top: 10, right: 20, left: 10, bottom: 20 }}>
-                  <defs>
-                    <linearGradient id="splitColor" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset={off} stopColor="var(--color-accent-green)" stopOpacity={0.2} />
-                      <stop offset={off} stopColor="var(--color-accent-red)" stopOpacity={0.2} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-subtle)" vertical={false} />
-                  <XAxis dataKey="spot" stroke="var(--color-text-muted)" fontSize={10} tickFormatter={v => `₹${Number(v).toLocaleString()}`} dy={8} />
-                  <YAxis stroke="var(--color-text-muted)" fontSize={10} tickFormatter={v => `₹${Number(v).toLocaleString()}`} dx={-4} />
-                  <Tooltip
-                    contentStyle={{ background: "var(--color-bg-card)", borderColor: "var(--color-border-subtle)", borderRadius: 6, fontSize: "11px" }}
-                    labelFormatter={v => `Spot: ₹${v}`}
-                    formatter={(v: any) => [`${Number(v) >= 0 ? "+" : ""}₹${Number(v).toLocaleString()}`, "P&L"]}
-                  />
-                  <ReferenceLine y={0} stroke="var(--color-text-muted)" strokeDasharray="3 3" />
-                  <ReferenceLine x={spot} stroke="var(--color-accent-blue)" strokeDasharray="3 3" label={{ value: `Spot`, fill: "var(--color-accent-blue)", fontSize: 10 }} />
-                  <Area type="monotone" dataKey="pnl" stroke="var(--color-text-primary)" strokeWidth={2} fill="url(#splitColor)" isAnimationActive={false} />
-                </AreaChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="absolute inset-0 flex items-center justify-center text-sm text-[var(--color-text-muted)]">
-                {loading ? "Loading option chain..." : "Select a strategy"}
+
+          {chartTab === "payoff" ? (
+            <>
+              <div className="flex-1 w-full relative">
+                {chartData.length > 0 && !loading ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={chartData} margin={{ top: 10, right: 20, left: 10, bottom: 20 }}>
+                      <defs>
+                        <linearGradient id="splitColor" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset={off} stopColor="var(--color-accent-green)" stopOpacity={0.2} />
+                          <stop offset={off} stopColor="var(--color-accent-red)" stopOpacity={0.2} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-subtle)" vertical={false} />
+                      <XAxis dataKey="spot" stroke="var(--color-text-muted)" fontSize={10} tickFormatter={v => `₹${Number(v).toLocaleString()}`} dy={8} />
+                      <YAxis stroke="var(--color-text-muted)" fontSize={10} tickFormatter={v => `₹${Number(v).toLocaleString()}`} dx={-4} />
+                      <Tooltip
+                        contentStyle={{ background: "var(--color-bg-card)", borderColor: "var(--color-border-subtle)", borderRadius: 6, fontSize: "11px" }}
+                        labelFormatter={v => `Spot: ₹${v}`}
+                        formatter={(v: any, name: any) => [`${Number(v) >= 0 ? "+" : ""}₹${Number(v).toLocaleString()}`, name === "pnl" ? "On Expiry" : "On Target"]}
+                      />
+                      <ReferenceLine y={0} stroke="var(--color-text-muted)" strokeDasharray="3 3" />
+                      <ReferenceLine x={spot} stroke="var(--color-accent-blue)" strokeDasharray="3 3" label={{ value: "Spot", fill: "var(--color-accent-blue)", fontSize: 10 }} />
+                      <Area type="monotone" dataKey="pnl" stroke="var(--color-text-primary)" strokeWidth={2} fill="url(#splitColor)" isAnimationActive={false} name="pnl" />
+                      {targetDays > 0 && <Line type="monotone" dataKey="pnlTarget" stroke="var(--color-accent-blue)" strokeWidth={2} strokeDasharray="6 3" dot={false} isAnimationActive={false} name="pnlTarget" />}
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center text-sm text-[var(--color-text-muted)]">
+                    {loading ? "Loading option chain..." : "Select a strategy"}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+              {/* Target Date Slider */}
+              <div className="flex items-center gap-3 mt-3 pt-3 border-t border-[var(--color-border-subtle)]">
+                <span className="text-[10px] font-semibold text-[var(--color-text-muted)] uppercase whitespace-nowrap">Target Date</span>
+                <input type="range" min={0} max={daysToExpiry} value={targetDays} onChange={e => setTargetDays(+e.target.value)} className="flex-1 accent-[var(--color-accent-blue)]" />
+                <span className="text-[11px] font-mono text-[var(--color-text-primary)] whitespace-nowrap w-24 text-right">
+                  {targetDays === 0 ? "Today" : `+${targetDays}d`} → Exp {daysToExpiry}d
+                </span>
+              </div>
+            </>
+          ) : (
+            /* OI Bar Chart */
+            <div className="flex-1 w-full">
+              {oiData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={oiData} margin={{ top: 10, right: 20, left: 10, bottom: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-subtle)" vertical={false} />
+                    <XAxis dataKey="strike" stroke="var(--color-text-muted)" fontSize={9} />
+                    <YAxis stroke="var(--color-text-muted)" fontSize={9} tickFormatter={v => `${(Number(v)/1000).toFixed(0)}K`} />
+                    <Tooltip contentStyle={{ background: "var(--color-bg-card)", borderColor: "var(--color-border-subtle)", borderRadius: 6, fontSize: "11px" }} />
+                    <Legend wrapperStyle={{ fontSize: "11px" }} />
+                    <Bar dataKey="callOI" name="Call OI" fill="var(--color-accent-green)" fillOpacity={0.6} />
+                    <Bar dataKey="putOI" name="Put OI" fill="var(--color-accent-red)" fillOpacity={0.6} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-sm text-[var(--color-text-muted)]">No OI data</div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Strikewise IVs */}
