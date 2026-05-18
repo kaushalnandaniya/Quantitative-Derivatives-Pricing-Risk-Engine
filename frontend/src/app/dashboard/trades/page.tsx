@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/lib/auth";
 import { tradesApi, type TradeData } from "@/lib/api";
 
@@ -13,13 +13,13 @@ export default function TradesPage() {
   const [form, setForm] = useState({ side: "buy", option_type: "call", spot: "24000", strike: "24000", T: "0.08", r: "0.069", sigma: "0.14", quantity: "10" });
   const [loading, setLoading] = useState(false);
 
-  const loadData = () => {
+  const loadData = useCallback(() => {
     if (!accessToken) return;
     tradesApi.list(accessToken, filter || undefined).then((d: any) => setTrades(d.trades));
     tradesApi.positions(accessToken).then(setPositions);
-  };
+  }, [accessToken, filter]);
 
-  useEffect(() => { loadData(); }, [accessToken, filter]);
+  useEffect(() => { loadData(); }, [loadData]);
 
   const bookTrade = async () => {
     if (!accessToken) return;

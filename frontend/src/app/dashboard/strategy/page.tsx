@@ -25,12 +25,6 @@ export default function StrategyBuilder() {
   const [result, setResult] = useState<StrategyResult | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Auto-simulate on mount or when strategy changes if we have a token
-  useEffect(() => {
-    if (accessToken) simulate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stratId, accessToken]);
-
   const simulate = async () => {
     if (!accessToken) return;
     setLoading(true);
@@ -43,6 +37,12 @@ export default function StrategyBuilder() {
     } catch {}
     finally { setLoading(false); }
   };
+
+  // Auto-simulate on mount or when strategy changes if we have a token
+  useEffect(() => {
+    if (accessToken) simulate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stratId, accessToken]);
 
   // Prepare chart data
   const chartData = result ? result.spots.map((spot, i) => ({

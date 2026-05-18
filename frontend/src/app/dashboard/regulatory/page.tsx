@@ -6,7 +6,7 @@ import { regulatoryApi, portfoliosApi, PortfolioData } from "@/lib/api";
 import { useEffect } from "react";
 
 export default function RegulatoryPage() {
-  const { accessToken, user } = useAuth();
+  const { accessToken } = useAuth();
   const [portfolios, setPortfolios] = useState<PortfolioData[]>([]);
   const [selectedPortfolio, setSelectedPortfolio] = useState<string>("");
   const [report, setReport] = useState<any>(null);
