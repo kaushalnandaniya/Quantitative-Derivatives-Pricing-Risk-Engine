@@ -29,6 +29,7 @@ const navGroups = [
     label: "Risk",
     items: [
       { href: "/dashboard/risk", label: "Risk Engine" },
+      { href: "/dashboard/portfolio-greeks", label: "Portfolio Greeks" },
       { href: "/dashboard/regulatory", label: "Basel III/IV" },
     ]
   }
