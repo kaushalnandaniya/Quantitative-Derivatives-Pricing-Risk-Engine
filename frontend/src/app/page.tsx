@@ -45,8 +45,8 @@ const STATS = [
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login, sendOtp, register, restore, isAuthenticated, isLoading } = useAuth();
-  const [mode, setMode] = useState<"login" | "register" | "verify">("login");
+  const { login, sendOtp, register, forgotPassword, resetPassword, restore, isAuthenticated, isLoading } = useAuth();
+  const [mode, setMode] = useState<"login" | "register" | "verify" | "forgot" | "reset">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
@@ -108,11 +108,26 @@ export default function LoginPage() {
     e.preventDefault(); setError(""); setSuccess(""); setLoading(true);
     try {
       if (mode === "register") { await handleSendOtp(); setLoading(false); return; }
+      if (mode === "forgot") {
+        await forgotPassword(email);
+        setMode("reset"); setCountdown(300);
+        setSuccess("Reset code sent to your email!");
+        setLoading(false); return;
+      }
       if (mode === "verify") {
         const otpString = otp.join("");
         if (otpString.length !== 6) { setError("Enter 6-digit code"); setLoading(false); return; }
         await register({ email, password, full_name: fullName, otp: otpString });
         setSuccess("Account created!"); await login(email, password);
+        setLoading(false); return;
+      }
+      if (mode === "reset") {
+        const otpString = otp.join("");
+        if (otpString.length !== 6) { setError("Enter 6-digit code"); setLoading(false); return; }
+        if (password.length < 8) { setError("Password must be at least 8 characters"); setLoading(false); return; }
+        await resetPassword({ email, otp: otpString, new_password: password });
+        setSuccess("Password reset successfully!");
+        setMode("login"); setPassword(""); setOtp(["", "", "", "", "", ""]);
         setLoading(false); return;
       }
       await login(email, password);
@@ -125,13 +140,13 @@ export default function LoginPage() {
   const renderAuthForm = (extraClass = "") => (
     <div className={`card p-6 lg:p-8 ${extraClass}`} style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border)" }}>
       <h2 className="text-xl font-bold mb-1" style={{ color: "var(--color-text-primary)" }}>
-        {mode === "login" ? "Welcome back" : mode === "register" ? "Create account" : "Verify email"}
+        {mode === "login" ? "Welcome back" : mode === "register" ? "Create account" : mode === "forgot" ? "Reset Password" : mode === "reset" ? "New Password" : "Verify email"}
       </h2>
       <p className="text-sm mb-6" style={{ color: "var(--color-text-secondary)" }}>
-        {mode === "login" ? "Sign in to access your dashboard" : mode === "register" ? "Register to start trading" : `Code sent to ${email}`}
+        {mode === "login" ? "Sign in to access your dashboard" : mode === "register" ? "Register to start trading" : mode === "forgot" ? "Enter your email to receive a reset code" : `Code sent to ${email}`}
       </p>
       <form onSubmit={handleSubmit} className="space-y-4">
-        {mode === "verify" && (
+        {(mode === "verify" || mode === "reset") && (
           <>
             <div className="flex justify-center gap-2.5" onPaste={handleOtpPaste}>
               {otp.map((digit, i) => (
@@ -142,23 +157,34 @@ export default function LoginPage() {
             </div>
             <div className="text-center text-sm" style={{ color: "var(--color-text-secondary)" }}>
               {countdown > 0 ? <span>Expires in <strong style={{ color: "var(--color-accent-blue)" }}>{formatCountdown(countdown)}</strong></span> : <span>Code expired.</span>}
-              <br /><button type="button" onClick={handleResendOtp} disabled={loading} className="mt-1 font-semibold" style={{ color: "var(--color-accent-blue)", background: "none", border: "none" }}>Resend code</button>
+              <br />
+              {mode === "verify" && (
+                <button type="button" onClick={handleResendOtp} disabled={loading} className="mt-1 font-semibold" style={{ color: "var(--color-accent-blue)", background: "none", border: "none" }}>Resend code</button>
+              )}
             </div>
           </>
         )}
         {mode === "register" && (
           <div><label className="label">Full Name</label><input type="text" className="input-field" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="John Doe" required /></div>
         )}
-        {mode !== "verify" && (
-          <>
-            <div><label className="label">Email</label><input type="email" className="input-field" value={email} onChange={e => setEmail(e.target.value)} placeholder="trader@institution.com" required /></div>
-            <div><label className="label">Password</label><input type="password" className="input-field" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required minLength={8} /></div>
-          </>
+        {(mode === "login" || mode === "register" || mode === "forgot") && (
+          <div><label className="label">Email</label><input type="email" className="input-field" value={email} onChange={e => setEmail(e.target.value)} placeholder="trader@institution.com" required /></div>
+        )}
+        {(mode === "login" || mode === "register" || mode === "reset") && (
+          <div>
+            <div className="flex justify-between">
+              <label className="label">{mode === "reset" ? "New Password" : "Password"}</label>
+              {mode === "login" && (
+                <button type="button" onClick={() => { setMode("forgot"); setError(""); setSuccess(""); }} className="text-xs font-semibold hover:underline" style={{ color: "var(--color-accent-blue)" }}>Forgot?</button>
+              )}
+            </div>
+            <input type="password" className="input-field" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required minLength={8} />
+          </div>
         )}
         {error && <div className="text-sm px-3 py-2 rounded-lg" style={{ background: "rgba(242,54,69,0.1)", color: "var(--color-accent-red)" }}>{error}</div>}
         {success && <div className="text-sm px-3 py-2 rounded-lg" style={{ background: "rgba(41,98,255,0.1)", color: "var(--color-accent-blue)" }}>{success}</div>}
         <button type="submit" className="btn-primary w-full" disabled={loading}>
-          {loading ? "Processing..." : mode === "login" ? "Sign In" : mode === "register" ? "Send Verification Code" : "Verify & Create Account"}
+          {loading ? "Processing..." : mode === "login" ? "Sign In" : mode === "register" ? "Send Verification Code" : mode === "forgot" ? "Send Reset Code" : mode === "reset" ? "Update Password" : "Verify & Create Account"}
         </button>
       </form>
       <div className="mt-5 text-center text-sm" style={{ color: "var(--color-text-secondary)" }}>
@@ -166,6 +192,10 @@ export default function LoginPage() {
           <>Don&apos;t have an account? <button onClick={() => { setMode("register"); setError(""); setSuccess(""); }} className="font-semibold" style={{ color: "var(--color-accent-blue)" }}>Register</button></>
         ) : mode === "register" ? (
           <>Already have an account? <button onClick={() => { setMode("login"); setError(""); setSuccess(""); }} className="font-semibold" style={{ color: "var(--color-accent-blue)" }}>Sign in</button></>
+        ) : mode === "forgot" ? (
+          <button onClick={() => { setMode("login"); setError(""); setSuccess(""); }} className="font-semibold" style={{ color: "var(--color-accent-blue)" }}>← Back to login</button>
+        ) : mode === "reset" ? (
+          <button onClick={() => { setMode("forgot"); setError(""); setSuccess(""); setOtp(["", "", "", "", "", ""]); }} className="font-semibold" style={{ color: "var(--color-accent-blue)" }}>← Back</button>
         ) : (
           <button onClick={() => { setMode("register"); setError(""); setSuccess(""); setOtp(["", "", "", "", "", ""]); }} className="font-semibold" style={{ color: "var(--color-accent-blue)" }}>← Back</button>
         )}
@@ -204,7 +234,7 @@ export default function LoginPage() {
                 Live on Vercel • Free to Use
               </div>
               <h1 className="text-4xl lg:text-6xl font-extrabold leading-[1.1] mb-6">
-                India&apos;s Most Advanced{" "}
+                Institutional-Grade{" "}
                 <span className="bg-gradient-to-r from-[var(--color-accent-blue)] to-[var(--color-accent-purple)] bg-clip-text text-transparent">Options Analytics</span>{" "}
                 Platform
               </h1>

@@ -76,10 +76,19 @@ class MockMarketProvider(MarketDataProvider):
         step, base_iv, skew, r = inst["strike_step"], inst["base_iv"], inst["iv_skew"], 0.069
 
         today = datetime.now()
-        if symbol in ("NIFTY", "BANKNIFTY"):
-            expiries = [today + timedelta(days=d) for d in [2, 9, 16, 30]]
+        if symbol == "NIFTY":
+            base_exp = datetime(2026, 5, 19)
+        elif symbol == "BANKNIFTY":
+            base_exp = datetime(2026, 5, 26)
+        elif symbol == "SENSEX":
+            base_exp = datetime(2026, 5, 21)
         else:
-            expiries = [today + timedelta(days=d) for d in [7, 30, 60]]
+            base_exp = today + timedelta(days=2)
+            
+        while (base_exp - today).days < 0:
+            base_exp += timedelta(days=7)
+            
+        expiries = [base_exp + timedelta(days=7 * w) for w in range(4)]
         expiry_labels = [e.strftime("%Y-%m-%d") for e in expiries]
 
         exp_date = expiries[0] if expiry is None else datetime.strptime(expiry, "%Y-%m-%d")

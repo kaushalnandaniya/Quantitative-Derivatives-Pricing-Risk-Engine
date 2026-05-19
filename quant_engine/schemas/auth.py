@@ -50,3 +50,13 @@ class UserResponse(BaseModel):
 class UserUpdateRequest(BaseModel):
     full_name: Optional[str] = None
     email: Optional[str] = None
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str = Field(..., description="Email address to send reset OTP to")
+
+
+class ResetPasswordRequest(BaseModel):
+    email: str = Field(..., description="Email address")
+    otp: str = Field(..., min_length=6, max_length=6, description="6-digit OTP")
+    new_password: str = Field(..., min_length=8, max_length=128, description="New password (min 8 chars)")

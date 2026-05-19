@@ -84,6 +84,12 @@ export const authApi = {
 
   me: (token: string) =>
     apiFetch<UserData>("/auth/me", { token }),
+
+  forgotPassword: (email: string) =>
+    apiFetch<{ message: string }>("/auth/forgot-password", { method: "POST", body: { email } }),
+
+  resetPassword: (data: { email: string; otp: string; new_password: string }) =>
+    apiFetch<{ message: string }>("/auth/reset-password", { method: "POST", body: data }),
 };
 
 // ============================================================

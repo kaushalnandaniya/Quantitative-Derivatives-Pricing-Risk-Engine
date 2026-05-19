@@ -15,6 +15,8 @@ interface AuthState {
   login: (email: string, password: string) => Promise<void>;
   sendOtp: (email: string) => Promise<void>;
   register: (data: { email: string; password: string; full_name: string; otp: string; role?: string }) => Promise<void>;
+  forgotPassword: (email: string) => Promise<void>;
+  resetPassword: (data: { email: string; otp: string; new_password: string }) => Promise<void>;
   logout: () => void;
   restore: () => Promise<void>;
 }
@@ -44,6 +46,14 @@ export const useAuth = create<AuthState>((set) => ({
 
   register: async (data) => {
     await authApi.register(data);
+  },
+
+  forgotPassword: async (email) => {
+    await authApi.forgotPassword(email);
+  },
+
+  resetPassword: async (data) => {
+    await authApi.resetPassword(data);
   },
 
   logout: () => {

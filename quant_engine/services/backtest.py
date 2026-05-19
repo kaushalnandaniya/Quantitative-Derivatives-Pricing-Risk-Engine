@@ -54,11 +54,23 @@ def _generate_mock_spots(symbol: str, weeks: int) -> List[Dict]:
         change = rng.normal(0.001, 0.025)
         spots.append(round(spots[-1] * (1 + change), 2))
     
-    today = datetime.now()
+    if symbol == "NIFTY":
+        base_exp = datetime(2026, 5, 19)
+    elif symbol == "BANKNIFTY":
+        base_exp = datetime(2026, 5, 26)
+    elif symbol == "SENSEX":
+        base_exp = datetime(2026, 5, 21)
+    else:
+        base_exp = datetime.now()
+        
+    # Find the most recent historical expiry
+    while (base_exp - datetime.now()).days > 0:
+        base_exp -= timedelta(days=7)
+
     results = []
     for i in range(weeks):
-        entry = today - timedelta(weeks=weeks - i)
-        expiry = entry + timedelta(days=7)
+        expiry = base_exp - timedelta(weeks=weeks - 1 - i)
+        entry = expiry - timedelta(days=7)
         results.append({
             "entry_date": entry.strftime("%Y-%m-%d"),
             "entry_spot": spots[i],
@@ -75,6 +87,7 @@ def run_backtest(
     sigma: float = 0.15,
     r: float = 0.069,
     lot_size: int = 1,
+    custom_legs: Optional[List[Dict]] = None,
 ) -> Dict:
     """
     Backtest a strategy over historical weekly expiries.
@@ -85,10 +98,10 @@ def run_backtest(
       3. Compute entry premium
       4. Compute P&L at expiry using intrinsic value
     """
-    if strategy_id not in STRATEGY_TEMPLATES:
+    if strategy_id != "custom" and strategy_id not in STRATEGY_TEMPLATES:
         raise ValueError(f"Unknown strategy: {strategy_id}")
     
-    template = STRATEGY_TEMPLATES[strategy_id]
+    template = STRATEGY_TEMPLATES.get(strategy_id, {})
     historical = _get_historical_spots(symbol, lookback_weeks)
     
     if not historical:
@@ -103,7 +116,17 @@ def run_backtest(
         expiry_S = week["expiry_spot"]
         
         # Build legs and compute entry premium
-        positions = build_strategy_legs(strategy_id, S, K, T, r, sigma, lot_size)
+        if strategy_id == "custom" and custom_legs:
+            positions = []
+            for leg in custom_legs:
+                positions.append({
+                    "type": leg["type"],
+                    "K": K + leg.get("offset", 0),
+                    "qty": leg["qty"] * lot_size,
+                    "S": S,
+                })
+        else:
+            positions = build_strategy_legs(strategy_id, S, K, T, r, sigma, lot_size)
         entry_premium = 0.0
         for pos in positions:
             price = float(black_scholes_price(pos["S"], pos["K"], T, r, sigma, pos["type"]))
@@ -146,8 +169,9 @@ def run_backtest(
     for p in pnls:
         equity.append(round(equity[-1] + p, 2))
     
+    strategy_name = "Custom Strategy" if strategy_id == "custom" else template["name"]
     return {
-        "strategy": {"id": strategy_id, "name": template["name"]},
+        "strategy": {"id": strategy_id, "name": strategy_name},
         "symbol": symbol,
         "lookback_weeks": lookback_weeks,
         "results": results,

@@ -18,9 +18,10 @@ from db.models import User
 from schemas.auth import (
     SendOtpRequest, RegisterRequest, LoginRequest, TokenResponse,
     RefreshRequest, UserResponse, UserUpdateRequest,
+    ForgotPasswordRequest, ResetPasswordRequest,
 )
 from services.auth_service import (
-    register_user, authenticate_user, get_user_by_id,
+    register_user, authenticate_user, get_user_by_id, reset_password,
     create_access_token, create_refresh_token, decode_token,
     generate_otp, store_otp, verify_otp,
 )
@@ -186,3 +187,43 @@ def update_me(
         role=user.role.value, is_active=user.is_active,
         created_at=user.created_at.isoformat(),
     )
+
+
+@router.post("/forgot-password", summary="Forgot Password", status_code=200)
+def forgot_password(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    """
+    Send a password reset OTP to the user's email.
+    
+    Silently succeeds even if email doesn't exist (security best practice).
+    """
+    email = data.email.lower().strip()
+
+    # Only send if user exists (but don't reveal this to the client)
+    user = db.query(User).filter(User.email == email).first()
+    if user:
+        otp = generate_otp()
+        store_otp(email, otp)
+        send_otp_email(email, otp)
+
+    return {"message": "If an account exists with this email, a reset code has been sent."}
+
+
+@router.post("/reset-password", summary="Reset Password", status_code=200)
+def reset_password_route(data: ResetPasswordRequest, db: Session = Depends(get_db)):
+    """
+    Reset password after OTP verification.
+    """
+    email = data.email.lower().strip()
+
+    if not verify_otp(email, data.otp):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or expired verification code.",
+        )
+
+    try:
+        reset_password(db, email, data.new_password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return {"message": "Password has been reset successfully. You can now sign in."}

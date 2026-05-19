@@ -218,3 +218,16 @@ def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:
 def get_user_by_id(db: Session, user_id: str) -> Optional[User]:
     """Fetch user by ID."""
     return db.query(User).filter(User.id == user_id).first()
+
+
+def reset_password(db: Session, email: str, new_password: str) -> User:
+    """Reset a user's password."""
+    user = db.query(User).filter(User.email == email.lower().strip()).first()
+    if not user:
+        raise ValueError("No account found with this email")
+    user.password_hash = hash_password(new_password)
+    db.commit()
+    db.refresh(user)
+    logger.info(f"Password reset for: {user.email}")
+    return user
+

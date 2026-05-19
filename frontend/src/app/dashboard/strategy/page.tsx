@@ -94,11 +94,10 @@ const READY_MADE = [
 
 // Client-side Black-Scholes for target-date pricing
 function cdf(x: number): number {
-  const a1 = 0.254829592, a2 = -0.284496736, a3 = 1.421413741, a4 = -1.453152027, a5 = 1.061405429, p = 0.3275911;
-  const sign = x < 0 ? -1 : 1;
-  const t = 1 / (1 + p * Math.abs(x));
-  const y = 1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x / 2);
-  return 0.5 * (1 + sign * y);
+  const t = 1 / (1 + 0.2316419 * Math.abs(x));
+  const d = 0.3989422804 * Math.exp(-x * x / 2);
+  const prob = d * t * (0.31938153 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+  return x > 0 ? 1 - prob : prob;
 }
 function bsPrice(S: number, K: number, T: number, r: number, sigma: number, type: "call" | "put"): number {
   if (T <= 0) return type === "call" ? Math.max(S - K, 0) : Math.max(K - S, 0);
@@ -364,7 +363,20 @@ export default function StrategyBuilder() {
             </span>
           </div>
           {legs.length > 0 && (
-            <button onClick={() => { setTradeMsg(""); setShowTradeConfirm(true); }} className="btn-primary w-full mt-3 py-2.5 text-xs font-bold">Trade All</button>
+            <div className="flex flex-col gap-2 mt-3">
+              <button onClick={() => { setTradeMsg(""); setShowTradeConfirm(true); }} className="btn-primary w-full py-2.5 text-xs font-bold">Trade All</button>
+              <button 
+                onClick={() => {
+                  const custom = legs.map(l => ({ type: l.type, offset: l.strike - atm, qty: l.qty }));
+                  localStorage.setItem("backtest_custom_legs", JSON.stringify(custom));
+                  localStorage.setItem("backtest_symbol", symbol);
+                  window.location.href = "/dashboard/backtest";
+                }}
+                className="btn-ghost w-full py-2.5 text-xs font-bold border border-[var(--color-border-subtle)]"
+              >
+                Backtest this Strategy
+              </button>
+            </div>
           )}
         </div>
 

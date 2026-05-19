@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
@@ -16,6 +16,7 @@ const STRATEGIES = [
   { id: "long_strangle", name: "Long Strangle" },
   { id: "iron_condor", name: "Iron Condor" },
   { id: "butterfly", name: "Butterfly" },
+  { id: "custom", name: "Custom Built Strategy" },
 ];
 
 interface BacktestResult {
@@ -34,15 +35,34 @@ export default function BacktestPage() {
   const [results, setResults] = useState<BacktestResult[]>([]);
   const [summary, setSummary] = useState<Record<string, number> | null>(null);
   const [equity, setEquity] = useState<number[]>([]);
+  const [customLegs, setCustomLegs] = useState<any[]>([]);
+
+  useEffect(() => {
+    const savedLegs = localStorage.getItem("backtest_custom_legs");
+    const savedSym = localStorage.getItem("backtest_symbol");
+    if (savedLegs) {
+      try {
+        setCustomLegs(JSON.parse(savedLegs));
+        setStratId("custom");
+        if (savedSym) setSymbol(savedSym);
+        localStorage.removeItem("backtest_custom_legs");
+        localStorage.removeItem("backtest_symbol");
+      } catch (e) {}
+    }
+  }, []);
 
   const runBacktest = async () => {
     if (!accessToken) return;
     setLoading(true);
     try {
+      const bodyPayload: any = { strategy_id: stratId, symbol, lookback_weeks: weeks };
+      if (stratId === "custom" && customLegs.length > 0) {
+        bodyPayload.custom_legs = customLegs;
+      }
       const res = await fetch(`${API_URL}/backtest/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({ strategy_id: stratId, symbol, lookback_weeks: weeks }),
+        body: JSON.stringify(bodyPayload),
       });
       const data = await res.json();
       setResults(data.results || []);
