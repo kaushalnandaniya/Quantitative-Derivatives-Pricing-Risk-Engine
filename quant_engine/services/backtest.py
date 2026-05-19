@@ -8,7 +8,7 @@ reconstructed option pricing at each historical entry point.
 
 import logging
 import numpy as np
-from typing import Dict, List
+from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 
 from pricing.black_scholes import black_scholes_price
