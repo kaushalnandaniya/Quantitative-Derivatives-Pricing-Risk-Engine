@@ -9,6 +9,7 @@ import logging
 import time
 import numpy as np
 from typing import Dict
+from numba import njit
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,22 @@ def _crr_params(
 # =============================================================================
 # 1. Fast Pricer — O(N) Memory
 # =============================================================================
+
+@njit(fastmath=True)
+def _backward_induction_njit(V, N, discount, p, is_american, is_call, S0, u, d, K):
+    for i in range(N - 1, -1, -1):
+        for j in range(i + 1):
+            val = discount * (p * V[j + 1] + (1.0 - p) * V[j])
+            if is_american:
+                S_i = S0 * (u ** j) * (d ** (i - j))
+                if is_call:
+                    exercise = S_i - K
+                else:
+                    exercise = K - S_i
+                if exercise > val:
+                    val = exercise
+            V[j] = val
+    return V[0]
 
 def binomial_price(
     S0: float,
@@ -115,24 +132,15 @@ def binomial_price(
         V = np.maximum(K - ST, 0.0)
 
     # --- Backward induction ---
-    for i in range(N - 1, -1, -1):
-        V = discount * (p * V[1:] + (1.0 - p) * V[:-1])
-
-        if ex_style == "american":
-            j_i = np.arange(i + 1, dtype=np.float64)
-            S_i = S0 * (u ** j_i) * (d ** (i - j_i))
-
-            if otype == "call":
-                exercise = np.maximum(S_i - K, 0.0)
-            else:
-                exercise = np.maximum(K - S_i, 0.0)
-
-            V = np.maximum(V, exercise)
+    is_american = (ex_style == "american")
+    is_call = (otype == "call")
+    
+    v0 = _backward_induction_njit(V, N, discount, p, is_american, is_call, S0, u, d, K)
 
     elapsed = (time.perf_counter() - t_start) * 1000
 
     return {
-        "price": float(V[0]),
+        "price": float(v0),
         "params": params,
         "N": N,
         "style": ex_style,

@@ -43,7 +43,15 @@ class GreeksCalculator:
         gamma = pdf_d1 / (S * sigma * np.sqrt(T_safe))
         vega = S * pdf_d1 * np.sqrt(T_safe)
         
-        return {"delta": delta, "gamma": gamma, "vega": vega, "theta": theta, "rho": rho}
+        # Cross-Greeks
+        vanna = -pdf_d1 * d2 / sigma
+        volga = vega * d1 * d2 / sigma
+        charm = -pdf_d1 * (r / (sigma * np.sqrt(T_safe)) - d2 / (2 * T_safe))
+        
+        return {
+            "delta": delta, "gamma": gamma, "vega": vega, "theta": theta, "rho": rho,
+            "vanna": vanna, "volga": volga, "charm": charm
+        }
 
     def _calculate_numerical(self, S, K, T, r, sigma, option_type="call"):
         h = self.h
@@ -69,4 +77,21 @@ class GreeksCalculator:
         v_r_minus = black_scholes_price(S, K, T, r - h, sigma, option_type)
         rho = (v_r_plus - v_r_minus) / (2 * h)
         
-        return {"delta": delta, "gamma": gamma, "vega": vega, "theta": theta, "rho": rho}
+        # 5. Cross-Greeks
+        v_plus_plus = black_scholes_price(S + h, K, T, r, sigma + h, option_type)
+        v_plus_minus = black_scholes_price(S + h, K, T, r, np.maximum(sigma - h, 1e-10), option_type)
+        v_minus_plus = black_scholes_price(S - h, K, T, r, sigma + h, option_type)
+        v_minus_minus = black_scholes_price(S - h, K, T, r, np.maximum(sigma - h, 1e-10), option_type)
+        vanna = (v_plus_plus - v_plus_minus - v_minus_plus + v_minus_minus) / (4 * h**2)
+        
+        volga = (v_sig_plus - 2 * v_base + v_sig_minus) / (h ** 2)
+        
+        v_t_minus_s_plus = black_scholes_price(S + h, K, np.maximum(T - h, 0), r, sigma, option_type)
+        v_t_minus_s_minus = black_scholes_price(S - h, K, np.maximum(T - h, 0), r, sigma, option_type)
+        delta_t_minus = (v_t_minus_s_plus - v_t_minus_s_minus) / (2 * h)
+        charm = (delta_t_minus - delta) / h
+        
+        return {
+            "delta": delta, "gamma": gamma, "vega": vega, "theta": theta, "rho": rho,
+            "vanna": vanna, "volga": volga, "charm": charm
+        }

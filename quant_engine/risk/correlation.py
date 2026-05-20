@@ -12,6 +12,7 @@ Theory:
 
 import logging
 import numpy as np
+import scipy.stats as stats
 from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -91,6 +92,56 @@ def generate_correlated_normals(
     return Z
 
 
+def generate_t_copula_normals(
+    n_sims: int,
+    n_assets: int,
+    corr_matrix: np.ndarray,
+    rng: np.random.Generator,
+    df: float = 4.0
+) -> np.ndarray:
+    """
+    Generate correlated standard normal draws using a Student-t Copula.
+
+    Args:
+        n_sims:      Number of simulation paths.
+        n_assets:    Number of assets.
+        corr_matrix: (n_assets, n_assets) correlation matrix.
+        rng:         NumPy random Generator.
+        df:          Degrees of freedom for the Student-t distribution (heavier tails).
+
+    Returns:
+        np.ndarray of shape (n_assets, n_sims) — correlated normal draws.
+    """
+    corr = np.asarray(corr_matrix, dtype=np.float64)
+    _validate_correlation_matrix(corr)
+
+    if corr.shape[0] != n_assets:
+        raise ValueError(
+            f"corr_matrix size {corr.shape[0]} != n_assets {n_assets}"
+        )
+
+    L = np.linalg.cholesky(corr)
+
+    # 1. Independent normals and Chi-squared
+    epsilon = rng.standard_normal((n_assets, n_sims))
+    W = rng.chisquare(df, size=n_sims)
+
+    # 2. Correlated Student-t variables
+    sqrt_W_over_nu = np.sqrt(W / df)
+    Z = L @ epsilon
+    T_vars = Z / sqrt_W_over_nu
+
+    # 3. Uniform marginals via t CDF
+    U = stats.t.cdf(T_vars, df=df)
+
+    # 4. Normal marginals via Normal PPF
+    # Clip U to avoid infinity at 0 and 1
+    U = np.clip(U, 1e-12, 1.0 - 1e-12)
+    N_vars = stats.norm.ppf(U)
+
+    return N_vars
+
+
 def simulate_correlated_gbm(
     spots: np.ndarray,
     rates: np.ndarray,
@@ -99,6 +150,8 @@ def simulate_correlated_gbm(
     n_sims: int,
     corr_matrix: np.ndarray,
     rng: np.random.Generator,
+    copula: str = "gaussian",
+    copula_df: float = 4.0
 ) -> np.ndarray:
     """
     Simulate correlated GBM terminal prices for multiple assets.
@@ -124,8 +177,11 @@ def simulate_correlated_gbm(
     sigmas = np.asarray(sigmas, dtype=np.float64)
     n_assets = len(spots)
 
-    # Generate correlated normals
-    Z = generate_correlated_normals(n_sims, n_assets, corr_matrix, rng)
+    # Generate correlated normals using the selected copula
+    if copula.lower() == "t":
+        Z = generate_t_copula_normals(n_sims, n_assets, corr_matrix, rng, df=copula_df)
+    else:
+        Z = generate_correlated_normals(n_sims, n_assets, corr_matrix, rng)
 
     # GBM for each asset: S_T = S_0 * exp(drift + diffusion)
     drift = (rates - 0.5 * sigmas**2) * T       # (n_assets,)
