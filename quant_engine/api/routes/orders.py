@@ -24,6 +24,7 @@ from services.oms_service import (
     fill_order, cancel_order,
     get_user_orders, get_order, get_executions,
 )
+from services.execution_service import route_order
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/orders", tags=["OMS"])
@@ -82,7 +83,21 @@ def submit(data: SubmitOrderRequest, user: User = Depends(get_current_user), db:
 
     # Auto-fill market orders that pass risk checks
     if risk_result["passed"] and data.order_type == "market":
-        fill_order(db, order, fill_price=risk_result["theoretical_premium"])
+        symbol = f"{data.option_type.upper()}-{data.strike}-{data.T}"
+        # Route to KiteConnect (or mock if no API key)
+        exec_res = route_order(
+            side=data.side,
+            quantity=data.quantity,
+            symbol=symbol,
+            order_type=data.order_type,
+            price=data.limit_price
+        )
+        
+        # Append execution details to notes
+        order.notes = f"{order.notes or ''} [Exec: {exec_res.get('exchange_order_id', 'fail')}]".strip()
+        
+        if exec_res["status"] == "SUBMITTED":
+            fill_order(db, order, fill_price=risk_result["theoretical_premium"])
 
     return _order_response(order)
 

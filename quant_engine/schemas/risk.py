@@ -13,6 +13,20 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel, Field, model_validator
 
 
+class CVAInput(BaseModel):
+    """Input for Credit Value Adjustment (CVA)."""
+    S: float = Field(..., gt=0, description="Spot price")
+    K: float = Field(..., gt=0, description="Strike price")
+    T: float = Field(..., gt=0, description="Time to maturity")
+    r: float = Field(0.05, description="Risk-free rate")
+    sigma: float = Field(..., gt=0, description="Volatility")
+    option_type: Literal["call", "put"] = Field("call")
+    hazard_rate: float = Field(0.02, gt=0, description="Annual probability of default (PD)")
+    recovery_rate: float = Field(0.4, ge=0, le=1.0, description="Recovery rate upon default")
+    n_sims: int = Field(10000, ge=1000, description="Number of Monte Carlo simulations")
+    n_steps: int = Field(100, ge=10, description="Number of time steps for EE profile")
+
+
 class PositionInput(BaseModel):
     """A single option position within a portfolio."""
 
