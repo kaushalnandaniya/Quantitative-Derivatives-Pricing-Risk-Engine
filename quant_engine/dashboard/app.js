@@ -21,6 +21,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setupGreeksExplorer();
     setupRiskEngine();
     setupStrategySimulator();
+    setupBacktester();
     setupScenarioAnalysis();
     setupMarketData();
 });
@@ -569,6 +570,246 @@ function renderScenarioHeatmap(data) {
         yaxis: {title: data.y_axis === 'vol' ? 'Vol Shift' : 'Days Forward', tickfont:{size:10}},
     };
     Plotly.newPlot('scenario-chart', [trace], layout, {responsive:true});
+}
+
+// ==========================================
+// Pine Script Backtester
+// ==========================================
+let btSymbol = 'RELIANCE';
+let btSavedStrategies = [];
+let btSearchTimeout = null;
+
+function setupBacktester() {
+    // Stock search with debounce
+    const searchInput = document.getElementById('bt-search');
+    const searchResults = document.getElementById('bt-search-results');
+
+    searchInput.addEventListener('input', (e) => {
+        clearTimeout(btSearchTimeout);
+        const q = e.target.value.trim();
+        if (q.length < 1) { searchResults.innerHTML = ''; searchResults.style.display = 'none'; return; }
+        btSearchTimeout = setTimeout(() => searchSymbols(q), 250);
+    });
+
+    // Hide search results on click outside
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.search-container')) {
+            searchResults.style.display = 'none';
+        }
+    });
+
+    // Run backtest
+    document.getElementById('btn-run-backtest').addEventListener('click', runPineBacktest);
+
+    // Save strategy
+    document.getElementById('btn-save-strategy').addEventListener('click', saveStrategy);
+
+    // Load saved strategies (if auth token exists)
+    loadSavedStrategies();
+}
+
+async function searchSymbols(query) {
+    const results = document.getElementById('bt-search-results');
+    try {
+        const res = await fetch(`${API_URL}/backtest/search?q=${encodeURIComponent(query)}`);
+        const data = await res.json();
+        if (data.results && data.results.length > 0) {
+            results.innerHTML = data.results.map(s =>
+                `<div class="search-item" data-symbol="${s.symbol}">
+                    <span class="search-symbol">${s.symbol}</span>
+                    <span class="search-name">${s.name}</span>
+                </div>`
+            ).join('');
+            results.style.display = 'block';
+            // Click handlers
+            results.querySelectorAll('.search-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    btSymbol = item.dataset.symbol;
+                    document.getElementById('bt-selected-symbol').innerHTML = `<span class="symbol-badge">${btSymbol}</span>`;
+                    document.getElementById('bt-search').value = '';
+                    results.style.display = 'none';
+                });
+            });
+        } else {
+            results.innerHTML = '<div class="search-item"><span class="search-name">No results found</span></div>';
+            results.style.display = 'block';
+        }
+    } catch (e) { console.error(e); }
+}
+
+async function runPineBacktest() {
+    const script = document.getElementById('bt-pine-editor').value;
+    const period = parseInt(document.getElementById('bt-period').value) || 365;
+
+    if (!script.trim()) { alert('Write a Pine Script strategy first.'); return; }
+
+    showSpinner();
+    try {
+        const res = await fetch(`${API_URL}/backtest/run-pine`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pine_script: script, symbol: btSymbol, period_days: period })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            renderBacktestResults(data);
+        } else {
+            alert(data.detail || data.error || 'Backtest failed');
+        }
+    } catch (e) {
+        alert('Failed to run backtest. Check API connection.');
+        console.error(e);
+    }
+    hideSpinner();
+}
+
+function renderBacktestResults(data) {
+    const s = data.summary;
+
+    // Summary cards
+    document.getElementById('bt-total-trades').innerText = s.total_trades;
+    document.getElementById('bt-win-rate').innerText = `${s.win_rate}%`;
+    document.getElementById('bt-win-rate').style.color = s.win_rate >= 50 ? 'var(--accent-green)' : 'var(--accent-red)';
+    document.getElementById('bt-total-pnl').innerText = `₹${s.total_pnl.toLocaleString()}`;
+    document.getElementById('bt-total-pnl').style.color = s.total_pnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+    document.getElementById('bt-sharpe').innerText = s.sharpe_ratio;
+    document.getElementById('bt-sharpe').style.color = s.sharpe_ratio >= 1 ? 'var(--accent-green)' : 'var(--text-main)';
+    document.getElementById('bt-drawdown').innerText = `₹${s.max_drawdown.toLocaleString()}`;
+    document.getElementById('bt-drawdown').style.color = 'var(--accent-red)';
+    document.getElementById('bt-profit-factor').innerText = s.profit_factor === Infinity ? '∞' : s.profit_factor;
+
+    // Equity curve chart
+    const eqTrace = {
+        y: data.equity_curve,
+        type: 'scatter', mode: 'lines',
+        line: { color: '#2962ff', width: 2 },
+        fill: 'tozeroy',
+        fillcolor: 'rgba(41, 98, 255, 0.1)',
+        name: 'Equity'
+    };
+    const layout = {
+        ...plotLayout,
+        title: `Equity Curve — ${btSymbol}`,
+        xaxis: { title: 'Trade #', gridcolor: '#272a31' },
+        yaxis: { title: 'Cumulative P&L', gridcolor: '#272a31' },
+    };
+    Plotly.newPlot('bt-equity-chart', [eqTrace], layout, { responsive: true });
+
+    // Trade log table
+    const tableWrap = document.getElementById('bt-trade-table');
+    if (data.trades && data.trades.length > 0) {
+        let html = `<table class="chain-table">
+            <thead><tr>
+                <th>#</th><th>Side</th><th>Entry</th><th>Exit</th>
+                <th>Entry ₹</th><th>Exit ₹</th><th>P&L</th><th>P&L %</th>
+            </tr></thead><tbody>`;
+        data.trades.forEach((t, i) => {
+            const cls = t.pnl >= 0 ? 'itm' : 'otm';
+            const entryDate = t.entry_date ? t.entry_date.split(' ')[0] : '-';
+            const exitDate = t.exit_date ? t.exit_date.split(' ')[0] : '-';
+            html += `<tr>
+                <td>${i + 1}</td>
+                <td><span class="${t.side === 'long' ? 'leg-long' : 'leg-short'}">${t.side.toUpperCase()}</span></td>
+                <td>${entryDate}</td><td>${exitDate}</td>
+                <td>₹${t.entry_price?.toFixed(2) || '-'}</td>
+                <td>₹${t.exit_price?.toFixed(2) || '-'}</td>
+                <td class="${cls}">₹${t.pnl?.toFixed(2) || '-'}</td>
+                <td class="${cls}">${t.pnl_pct?.toFixed(2) || '-'}%</td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+        tableWrap.innerHTML = html;
+    } else {
+        tableWrap.innerHTML = '<p style="color:var(--text-muted); text-align:center; padding:1rem;">No trades generated</p>';
+    }
+}
+
+// Strategy CRUD helpers
+function getAuthToken() {
+    return localStorage.getItem('auth_token') || '';
+}
+
+async function loadSavedStrategies() {
+    const token = getAuthToken();
+    if (!token) {
+        document.getElementById('bt-saved-list').innerHTML = '<span style="color:var(--text-muted); font-size:0.8rem;">Login to save strategies</span>';
+        return;
+    }
+    try {
+        const res = await fetch(`${API_URL}/backtest/strategies`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        btSavedStrategies = data.strategies || [];
+        renderSavedStrategies();
+    } catch (e) { console.error(e); }
+}
+
+function renderSavedStrategies() {
+    const el = document.getElementById('bt-saved-list');
+    if (!btSavedStrategies.length) {
+        el.innerHTML = '<span style="color:var(--text-muted); font-size:0.8rem;">No saved strategies</span>';
+        return;
+    }
+    el.innerHTML = btSavedStrategies.map(s => `
+        <div class="saved-strategy-item">
+            <button class="strategy-load-btn" data-id="${s.id}" title="Load">${s.name}</button>
+            <button class="strategy-delete-btn" data-id="${s.id}" title="Delete">✕</button>
+        </div>
+    `).join('');
+
+    // Load handlers
+    el.querySelectorAll('.strategy-load-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const strat = btSavedStrategies.find(s => s.id === btn.dataset.id);
+            if (strat) {
+                document.getElementById('bt-pine-editor').value = strat.pine_script;
+                document.getElementById('bt-strategy-name').value = strat.name;
+            }
+        });
+    });
+
+    // Delete handlers
+    el.querySelectorAll('.strategy-delete-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const token = getAuthToken();
+            if (!token) return;
+            try {
+                await fetch(`${API_URL}/backtest/strategies/${btn.dataset.id}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                loadSavedStrategies();
+            } catch (e) { console.error(e); }
+        });
+    });
+}
+
+async function saveStrategy() {
+    const token = getAuthToken();
+    if (!token) { alert('Login required to save strategies.'); return; }
+
+    const name = document.getElementById('bt-strategy-name').value.trim();
+    const script = document.getElementById('bt-pine-editor').value.trim();
+    if (!name || !script) { alert('Enter a strategy name and Pine Script code.'); return; }
+
+    try {
+        const res = await fetch(`${API_URL}/backtest/strategies`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ name, pine_script: script })
+        });
+        if (res.ok) {
+            loadSavedStrategies();
+        } else {
+            const err = await res.json();
+            alert(err.detail || 'Failed to save strategy');
+        }
+    } catch (e) { console.error(e); }
 }
 
 // ==========================================

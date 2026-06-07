@@ -151,6 +151,7 @@ class User(Base):
     orders = relationship("Order", back_populates="user", cascade="all, delete-orphan")
     alerts = relationship("Alert", back_populates="user", cascade="all, delete-orphan")
     audit_logs = relationship("AuditLog", back_populates="user", cascade="all, delete-orphan")
+    saved_strategies = relationship("SavedStrategy", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<User {self.email} role={self.role}>"
@@ -324,3 +325,25 @@ class Execution(Base):
 
     def __repr__(self):
         return f"<Execution {self.fill_quantity}x @ {self.fill_price}>"
+
+
+class SavedStrategy(Base):
+    __tablename__ = "saved_strategies"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(255), nullable=False)
+    pine_script = Column(Text, nullable=False)
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
+
+    # Relationships
+    user = relationship("User", back_populates="saved_strategies")
+
+    __table_args__ = (
+        Index("ix_strategies_user", "user_id"),
+    )
+
+    def __repr__(self):
+        return f"<SavedStrategy '{self.name}'>"

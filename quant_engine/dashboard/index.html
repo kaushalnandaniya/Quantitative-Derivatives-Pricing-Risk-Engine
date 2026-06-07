@@ -25,6 +25,7 @@
                 <li><a href="#" data-page="greeks">Greeks Explorer</a></li>
                 <li><a href="#" data-page="risk">Risk Engine</a></li>
                 <li><a href="#" data-page="strategy">Strategy Sim</a></li>
+                <li><a href="#" data-page="backtest">Backtester</a></li>
                 <li><a href="#" data-page="scenario">Scenarios</a></li>
                 <li><a href="#" data-page="market">Market Data</a></li>
             </ul>
@@ -361,6 +362,112 @@
                         <div class="greeks-grid" id="strategy-greeks"></div>
                         <div class="chart-container glass">
                             <div id="strategy-chart" style="width:100%; height:400px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            <!-- BACKTESTER PAGE -->
+            <section id="page-backtest" class="page">
+                <header>
+                    <h2>Pine Script Backtester</h2>
+                    <p>Write, save, and backtest Pine Script strategies against historical data</p>
+                </header>
+
+                <div class="backtest-layout">
+                    <!-- Left: Controls -->
+                    <div class="backtest-controls glass">
+                        <!-- Stock Search -->
+                        <h3>Stock</h3>
+                        <div class="search-container">
+                            <input type="text" id="bt-search" class="num-input" placeholder="Search symbol (e.g. RELIANCE, NIFTY...)" autocomplete="off">
+                            <div id="bt-search-results" class="search-dropdown"></div>
+                        </div>
+                        <div id="bt-selected-symbol" class="selected-symbol">
+                            <span class="symbol-badge">RELIANCE</span>
+                        </div>
+
+                        <hr style="border-color: rgba(255,255,255,0.1); margin: 1rem 0;">
+
+                        <!-- Saved Strategies -->
+                        <h3>Saved Strategies</h3>
+                        <div id="bt-saved-list" class="saved-strategies-list">
+                            <span style="color:var(--text-muted); font-size:0.8rem;">No saved strategies</span>
+                        </div>
+
+                        <hr style="border-color: rgba(255,255,255,0.1); margin: 1rem 0;">
+
+                        <!-- Settings -->
+                        <h3>Settings</h3>
+                        <div class="param-form">
+                            <div class="form-group">
+                                <label>Lookback Period (days): <input type="number" id="bt-period" value="365" min="30" max="3650" class="num-input"></label>
+                            </div>
+                        </div>
+
+                        <button type="button" class="btn-primary" id="btn-run-backtest">▶ Run Backtest</button>
+                    </div>
+
+                    <!-- Center: Pine Editor -->
+                    <div class="backtest-editor-panel">
+                        <div class="editor-header">
+                            <h3>Pine Script Editor</h3>
+                            <div class="editor-actions">
+                                <input type="text" id="bt-strategy-name" placeholder="Strategy name..." class="num-input" style="width: 180px;">
+                                <button type="button" id="btn-save-strategy" class="btn-secondary-sm">Save</button>
+                            </div>
+                        </div>
+                        <div class="pine-editor-container glass">
+                            <textarea id="bt-pine-editor" class="pine-editor" spellcheck="false" placeholder="// Pine Script v5 Strategy
+//@version=5
+strategy('My Strategy', overlay=true)
+
+// Define indicators
+fast = ta.sma(close, 10)
+slow = ta.sma(close, 30)
+
+// Entry conditions
+if ta.crossover(fast, slow)
+    strategy.entry('Long', strategy.long)
+
+if ta.crossunder(fast, slow)
+    strategy.close('Long')
+">//@version=5
+strategy("SMA Crossover", overlay=true)
+
+// Moving Averages
+fast = ta.sma(close, 10)
+slow = ta.sma(close, 30)
+
+// Long entry on golden cross
+if ta.crossover(fast, slow)
+    strategy.entry("Long", strategy.long)
+
+// Close on death cross
+if ta.crossunder(fast, slow)
+    strategy.close("Long")</textarea>
+                        </div>
+                    </div>
+
+                    <!-- Right: Results -->
+                    <div class="backtest-results-panel">
+                        <div id="bt-summary" class="bt-summary-grid">
+                            <div class="stat-card glass"><h4>Total Trades</h4><div class="stat-value" id="bt-total-trades">--</div></div>
+                            <div class="stat-card glass"><h4>Win Rate</h4><div class="stat-value" id="bt-win-rate">--</div></div>
+                            <div class="stat-card glass"><h4>Total P&L</h4><div class="stat-value" id="bt-total-pnl">--</div></div>
+                            <div class="stat-card glass"><h4>Sharpe Ratio</h4><div class="stat-value" id="bt-sharpe">--</div></div>
+                            <div class="stat-card glass"><h4>Max Drawdown</h4><div class="stat-value" id="bt-drawdown">--</div></div>
+                            <div class="stat-card glass"><h4>Profit Factor</h4><div class="stat-value" id="bt-profit-factor">--</div></div>
+                        </div>
+
+                        <div class="chart-container glass">
+                            <div id="bt-equity-chart" style="width:100%; height:300px;"></div>
+                        </div>
+
+                        <div class="bt-trade-log glass">
+                            <h4>Trade Log</h4>
+                            <div id="bt-trade-table" class="trade-table-wrap">
+                                <p style="color:var(--text-muted); text-align:center; padding:1rem;">Run a backtest to see results</p>
+                            </div>
                         </div>
                     </div>
                 </div>
