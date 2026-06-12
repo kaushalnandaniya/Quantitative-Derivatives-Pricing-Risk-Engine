@@ -17,7 +17,7 @@ export interface TradeMarker {
   position: "aboveBar" | "belowBar" | "inBar";
   color: string;
   shape: "arrowUp" | "arrowDown" | "circle" | "square";
-  text: string;
+  text?: string;
 }
 
 interface TradingViewChartProps {
