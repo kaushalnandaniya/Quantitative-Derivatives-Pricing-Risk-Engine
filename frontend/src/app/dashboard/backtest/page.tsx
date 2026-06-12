@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/lib/auth";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
-  BarChart, Bar, Cell
+  BarChart, Bar, Cell, PieChart, Pie, Legend
 } from "recharts";
 import TradingViewChart, { TradeMarker } from "@/components/TradingViewChart";
 
@@ -36,10 +36,12 @@ interface PineBacktestResult {
     exit_price: number; pnl: number; pnl_pct: number;
   }>;
   summary: {
-    total_trades: number; wins: number; losses: number;
+    total_trades: number; wins: number; losses: number; breakevens: number;
     win_rate: number; total_pnl: number; avg_pnl: number;
     best_trade: number; worst_trade: number;
-    max_drawdown: number; sharpe_ratio: number; profit_factor: number;
+    max_drawdown: number; max_drawdown_pct: number; sharpe_ratio: number; profit_factor: number;
+    gross_profit: number; gross_loss: number; open_pnl: number; commission: number;
+    cagr: number; return_on_initial_capital: number; avg_bars_in_trade: number;
   };
   equity_curve: number[];
   dates: string[];
@@ -252,6 +254,43 @@ export default function BacktestPage() {
     return m;
   }) || [];
 
+  // Advanced Chart Data
+  const profitStructureData = results?.summary ? [
+    { name: 'Total Profit', value: results.summary.gross_profit, fill: '#26a69a' },
+    { name: 'Total Loss', value: -results.summary.gross_loss, fill: '#ef5350' },
+    { name: 'Open P&L', value: results.summary.open_pnl, fill: '#fb8c00' },
+    { name: 'Commission', value: -results.summary.commission, fill: '#42a5f5' },
+    { name: 'Total P&L', value: results.summary.total_pnl, fill: '#2962ff' }
+  ] : [];
+
+  const tradeDistData = results?.summary ? [
+    { name: 'Winners', value: results.summary.wins, fill: '#26a69a' },
+    { name: 'Losers', value: results.summary.losses, fill: '#ef5350' },
+    { name: 'Breakevens', value: results.summary.breakevens, fill: '#fb8c00' }
+  ].filter(d => d.value > 0) : [];
+
+  const roiBins = (() => {
+    if (!results?.trades || results.trades.length === 0) return [];
+    const pcts = results.trades.map(t => t.pnl_pct);
+    const minPct = Math.min(...pcts, 0);
+    const maxPct = Math.max(...pcts, 0);
+    const binCount = 20;
+    const binSize = Math.max((maxPct - minPct) / binCount, 0.1);
+    
+    const bins = Array(binCount).fill(0).map((_, i) => ({
+      range: `${(minPct + i * binSize).toFixed(1)}%`,
+      winners: 0,
+      losers: 0
+    }));
+
+    results.trades.forEach(t => {
+      const binIndex = Math.max(0, Math.min(Math.floor((t.pnl_pct - minPct) / binSize), binCount - 1));
+      if (t.pnl_pct >= 0) bins[binIndex].winners++;
+      else bins[binIndex].losers++; // We map losers as positive count so bar goes UP like in TradingView
+    });
+    return bins;
+  })();
+
   // ──────────────────────────
   // Render
   // ──────────────────────────
@@ -433,14 +472,16 @@ if ta.crossunder(fast, slow)
       {results && results.summary && (
         <>
           {/* Summary Stats */}
-          <div className="card grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 shadow-sm">
+          <div className="card grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 shadow-sm">
             {[
               { label: "Total Trades", val: results.summary.total_trades, color: "" },
               { label: "Win Rate", val: `${results.summary.win_rate}%`, color: results.summary.win_rate >= 50 ? "var(--color-accent-green)" : "var(--color-accent-red)" },
               { label: "Total P&L", val: `₹${results.summary.total_pnl?.toLocaleString()}`, color: results.summary.total_pnl >= 0 ? "var(--color-accent-green)" : "var(--color-accent-red)" },
+              { label: "CAGR", val: `${results.summary.cagr}%`, color: results.summary.cagr >= 0 ? "var(--color-accent-green)" : "var(--color-accent-red)" },
               { label: "Sharpe Ratio", val: results.summary.sharpe_ratio, color: results.summary.sharpe_ratio >= 1 ? "var(--color-accent-green)" : "" },
-              { label: "Max Drawdown", val: `₹${results.summary.max_drawdown?.toLocaleString()}`, color: "var(--color-accent-red)" },
+              { label: "Max Drawdown", val: `${results.summary.max_drawdown_pct}%`, color: "var(--color-accent-red)" },
               { label: "Profit Factor", val: results.summary.profit_factor >= 9999 ? "∞" : results.summary.profit_factor, color: results.summary.profit_factor > 1 ? "var(--color-accent-green)" : "" },
+              { label: "Open P&L", val: `₹${results.summary.open_pnl?.toLocaleString()}`, color: results.summary.open_pnl >= 0 ? "var(--color-accent-green)" : "var(--color-accent-red)" },
             ].map((m, i) => (
               <div key={i}>
                 <div className="text-[10px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wide mb-1">{m.label}</div>
@@ -491,6 +532,98 @@ if ta.crossunder(fast, slow)
                       <Cell key={i} fill={entry.pnl >= 0 ? "var(--color-accent-green)" : "var(--color-accent-red)"} />
                     ))}
                   </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Advanced Analytics */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4 mb-4">
+            {/* Profit Structure */}
+            <div className="card shadow-sm min-h-[300px]">
+              <h3 className="text-xs font-bold uppercase text-[var(--color-text-secondary)] tracking-wider mb-3">Profit Structure</h3>
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={profitStructureData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-subtle)" vertical={false} />
+                  <XAxis dataKey="name" stroke="var(--color-text-muted)" fontSize={10} />
+                  <YAxis stroke="var(--color-text-muted)" fontSize={10} tickFormatter={v => `₹${v}`} />
+                  <Tooltip contentStyle={{ background: "var(--color-bg-card)", borderColor: "var(--color-border-subtle)", borderRadius: 6, fontSize: "11px" }} cursor={{fill: 'rgba(255, 255, 255, 0.05)'}} />
+                  <ReferenceLine y={0} stroke="var(--color-text-muted)" strokeDasharray="3 3" />
+                  <Bar dataKey="value" isAnimationActive={false}>
+                    {profitStructureData.map((entry, i) => (
+                      <Cell key={i} fill={entry.fill} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Trades Distribution & ROI */}
+            <div className="card shadow-sm min-h-[300px]">
+              <h3 className="text-xs font-bold uppercase text-[var(--color-text-secondary)] tracking-wider mb-3">Trades Analysis</h3>
+              <div className="flex flex-col md:flex-row h-[260px] items-center">
+                <div className="w-full md:w-1/2 h-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={tradeDistData}
+                        cx="50%" cy="50%"
+                        innerRadius={60} outerRadius={80}
+                        paddingAngle={2}
+                        dataKey="value"
+                        isAnimationActive={false}
+                      >
+                        {tradeDistData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.fill} />
+                        ))}
+                      </Pie>
+                      <Tooltip contentStyle={{ background: "var(--color-bg-card)", borderColor: "var(--color-border-subtle)", borderRadius: 6, fontSize: "11px" }} />
+                      <Legend verticalAlign="middle" align="right" layout="vertical" wrapperStyle={{ fontSize: "11px" }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="w-full md:w-1/2 flex flex-col justify-center px-4 space-y-6">
+                  <div className="flex justify-between">
+                    <div>
+                      <div className="text-[10px] text-[var(--color-text-secondary)] uppercase mb-1">Avg P&L per Trade</div>
+                      <div className={`font-mono text-lg font-bold ${results.summary.avg_pnl >= 0 ? "text-[var(--color-accent-green)]" : "text-[var(--color-accent-red)]"}`}>
+                        {results.summary.avg_pnl >= 0 ? "+" : ""}₹{results.summary.avg_pnl}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-[var(--color-text-secondary)] uppercase mb-1">Avg Bars in Trade</div>
+                      <div className="font-mono text-lg font-bold">{results.summary.avg_bars_in_trade}</div>
+                    </div>
+                  </div>
+                  <div className="flex justify-between">
+                    <div>
+                      <div className="text-[10px] text-[var(--color-text-secondary)] uppercase mb-1">Largest Profit</div>
+                      <div className="font-mono text-md font-bold text-[var(--color-accent-green)]">₹{results.summary.best_trade}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-[var(--color-text-secondary)] uppercase mb-1">Largest Loss</div>
+                      <div className="font-mono text-md font-bold text-[var(--color-accent-red)]">₹{results.summary.worst_trade}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ROI Distribution */}
+            <div className="card shadow-sm min-h-[300px] lg:col-span-2">
+              <h3 className="text-xs font-bold uppercase text-[var(--color-text-secondary)] tracking-wider mb-3">ROI Distribution</h3>
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={roiBins} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-subtle)" vertical={false} />
+                  <XAxis dataKey="range" stroke="var(--color-text-muted)" fontSize={10} tick={{ fill: "var(--color-text-muted)" }} />
+                  <YAxis stroke="var(--color-text-muted)" fontSize={10} />
+                  <Tooltip 
+                    contentStyle={{ background: "var(--color-bg-card)", borderColor: "var(--color-border-subtle)", borderRadius: 6, fontSize: "11px" }}
+                    cursor={{fill: 'rgba(255, 255, 255, 0.05)'}}
+                  />
+                  <Legend verticalAlign="top" align="right" wrapperStyle={{ fontSize: "11px", paddingBottom: "10px" }} />
+                  <Bar dataKey="losers" name="Losers" fill="#ef5350" isAnimationActive={false} />
+                  <Bar dataKey="winners" name="Winners" fill="#26a69a" isAnimationActive={false} />
                 </BarChart>
               </ResponsiveContainer>
             </div>

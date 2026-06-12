@@ -870,8 +870,11 @@ class PineExecutor:
                     'total_trades': 0, 'wins': 0, 'losses': 0, 'win_rate': 0,
                     'total_pnl': 0, 'avg_pnl': 0, 'best_trade': 0, 'worst_trade': 0,
                     'max_drawdown': 0, 'sharpe_ratio': 0, 'profit_factor': 0,
+                    'gross_profit': 0, 'gross_loss': 0, 'open_pnl': 0, 'commission': 0,
+                    'breakevens': 0, 'cagr': 0, 'max_drawdown_pct': 0, 'return_on_initial_capital': 0,
+                    'avg_bars_in_trade': 0,
                 },
-                'equity_curve': [0.0],
+                'equity_curve': [100000.0],
                 'dates': [str(self.df.index[0])] if len(self.df) > 0 else [],
             }
 
@@ -879,42 +882,83 @@ class PineExecutor:
         wins = [p for p in pnls if p > 0]
         losses = [p for p in pnls if p <= 0]
 
-        equity = [0.0]
+        equity = [100000.0]
         for p in pnls:
             equity.append(round(equity[-1] + p, 2))
 
-        peak = 0.0
+        peak = 100000.0
         max_dd = 0.0
+        max_dd_pct = 0.0
         for e in equity:
             if e > peak:
                 peak = e
             dd = peak - e
             if dd > max_dd:
                 max_dd = dd
+            dd_pct = (dd / peak) * 100 if peak > 0 else 0
+            if dd_pct > max_dd_pct:
+                max_dd_pct = dd_pct
 
         pnl_arr = np.array(pnls)
         sharpe = 0.0
         if len(pnl_arr) > 1 and np.std(pnl_arr) > 0:
             sharpe = round(np.mean(pnl_arr) / np.std(pnl_arr) * np.sqrt(252), 2)
 
-        gross_profit = sum(wins) if wins else 0
-        gross_loss = abs(sum(losses)) if losses else 0
+        gross_profit = sum([p for p in wins if p > 0]) if wins else 0
+        gross_loss = abs(sum([p for p in losses if p < 0])) if losses else 0
         profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else 9999.99
+
+        # Advanced metrics
+        initial_capital = 100000.0
+        final_equity = equity[-1]
+        total_pnl = final_equity - initial_capital
+        return_on_initial_capital = round((total_pnl / initial_capital) * 100, 2)
+
+        # CAGR
+        cagr = 0.0
+        if len(self.df) > 1:
+            try:
+                start_date = pd.to_datetime(self.df.index[0])
+                end_date = pd.to_datetime(self.df.index[-1])
+                years = (end_date - start_date).days / 365.25
+                if years > 0 and final_equity > 0:
+                    cagr = round(((final_equity / initial_capital) ** (1 / years) - 1) * 100, 2)
+            except Exception:
+                pass
+
+        bars_in_trade = [(t['exit_bar'] - t['entry_bar']) for t in completed if t['exit_bar'] is not None and t['entry_bar'] is not None]
+        avg_bars_in_trade = round(np.mean(bars_in_trade), 1) if bars_in_trade else 0.0
+
+        breakevens = [p for p in pnls if p == 0]
+
+        open_pnl = 0.0
+        if self.position != 0:
+            current_price = float(self.series['close'][-1])
+            open_pnl = round((current_price - self.entry_price) * self.position, 2)
 
         return {
             'trades': completed,
             'summary': {
                 'total_trades': len(completed),
                 'wins': len(wins),
-                'losses': len(losses),
+                'losses': len([p for p in losses if p < 0]),
+                'breakevens': len(breakevens),
                 'win_rate': round(len(wins) / len(completed) * 100, 1),
-                'total_pnl': round(sum(pnls), 2),
+                'total_pnl': round(total_pnl, 2),
                 'avg_pnl': round(np.mean(pnls), 2),
                 'best_trade': round(max(pnls), 2),
                 'worst_trade': round(min(pnls), 2),
                 'max_drawdown': round(max_dd, 2),
+                'max_drawdown_pct': round(max_dd_pct, 2),
                 'sharpe_ratio': sharpe,
                 'profit_factor': profit_factor,
+                'gross_profit': round(gross_profit, 2),
+                'gross_loss': round(gross_loss, 2),
+                'open_pnl': open_pnl,
+                'commission': 0.0,
+                'cagr': cagr,
+                'return_on_initial_capital': return_on_initial_capital,
+                'avg_bars_in_trade': avg_bars_in_trade,
             },
             'equity_curve': equity,
             'dates': [str(self.df.index[0])] + [t.get('exit_date', '') for t in completed],
