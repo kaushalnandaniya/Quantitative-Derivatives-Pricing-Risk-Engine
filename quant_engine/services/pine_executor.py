@@ -899,7 +899,7 @@ class PineExecutor:
 
         gross_profit = sum(wins) if wins else 0
         gross_loss = abs(sum(losses)) if losses else 0
-        profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else float('inf')
+        profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else 9999.99
 
         return {
             'trades': completed,

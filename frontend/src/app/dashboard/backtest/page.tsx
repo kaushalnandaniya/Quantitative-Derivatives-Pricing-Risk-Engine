@@ -442,7 +442,7 @@ if ta.crossunder(fast, slow)
               { label: "Total P&L", val: `₹${results.summary.total_pnl?.toLocaleString()}`, color: results.summary.total_pnl >= 0 ? "var(--color-accent-green)" : "var(--color-accent-red)" },
               { label: "Sharpe Ratio", val: results.summary.sharpe_ratio, color: results.summary.sharpe_ratio >= 1 ? "var(--color-accent-green)" : "" },
               { label: "Max Drawdown", val: `₹${results.summary.max_drawdown?.toLocaleString()}`, color: "var(--color-accent-red)" },
-              { label: "Profit Factor", val: results.summary.profit_factor === Infinity ? "∞" : results.summary.profit_factor, color: results.summary.profit_factor > 1 ? "var(--color-accent-green)" : "" },
+              { label: "Profit Factor", val: results.summary.profit_factor >= 9999 ? "∞" : results.summary.profit_factor, color: results.summary.profit_factor > 1 ? "var(--color-accent-green)" : "" },
             ].map((m, i) => (
               <div key={i}>
                 <div className="text-[10px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wide mb-1">{m.label}</div>
