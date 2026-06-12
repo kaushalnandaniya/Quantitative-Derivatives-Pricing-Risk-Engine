@@ -6,6 +6,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
   BarChart, Bar, Cell
 } from "recharts";
+import TradingViewChart, { TradeMarker } from "@/components/TradingViewChart";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -42,6 +43,7 @@ interface PineBacktestResult {
   };
   equity_curve: number[];
   dates: string[];
+  ohlcv?: Array<{ time: string, open: number, high: number, low: number, close: number, volume: number }>;
   symbol?: string;
 }
 
@@ -227,6 +229,30 @@ export default function BacktestPage() {
     pnl: t.pnl,
     date: t.exit_date?.split(" ")[0] || "",
   })) || [];
+
+  // Trade markers for Candlestick Chart
+  const chartMarkers: TradeMarker[] = results?.trades?.flatMap((t) => {
+    const m: TradeMarker[] = [];
+    if (t.entry_date) {
+      m.push({
+        time: t.entry_date.split(" ")[0],
+        position: t.side === "long" ? "belowBar" : "aboveBar",
+        color: t.side === "long" ? "#26a69a" : "#ef5350",
+        shape: t.side === "long" ? "arrowUp" : "arrowDown",
+        text: `Entry ${t.side}`,
+      });
+    }
+    if (t.exit_date) {
+      m.push({
+        time: t.exit_date.split(" ")[0],
+        position: "inBar",
+        color: t.pnl >= 0 ? "#26a69a" : "#ef5350",
+        shape: "circle",
+        text: "Exit",
+      });
+    }
+    return m;
+  }) || [];
 
   // ──────────────────────────
   // Render
@@ -425,8 +451,18 @@ if ta.crossunder(fast, slow)
             ))}
           </div>
 
-          {/* Charts */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* TradingView Chart */}
+          {results.ohlcv && (
+            <div className="card shadow-sm mt-4 min-h-[450px]">
+              <h3 className="text-xs font-bold uppercase text-[var(--color-text-secondary)] tracking-wider mb-3">
+                {selectedSymbol} — Price Action & Trades
+              </h3>
+              <TradingViewChart data={results.ohlcv} markers={chartMarkers} />
+            </div>
+          )}
+
+          {/* Additional Charts */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
             <div className="card shadow-sm min-h-[300px]">
               <h3 className="text-xs font-bold uppercase text-[var(--color-text-secondary)] tracking-wider mb-3">
                 Equity Curve — {selectedSymbol}

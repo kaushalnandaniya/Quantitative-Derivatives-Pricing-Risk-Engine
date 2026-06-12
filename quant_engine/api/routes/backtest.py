@@ -115,6 +115,18 @@ def backtest_pine(req: PineBacktestRequest):
     results["symbol"] = req.symbol
     results["period_days"] = req.period_days
     results["data_points"] = len(df)
+    
+    # Add OHLCV data for the frontend chart
+    # Reset index to get dates as a column, fill NaN with None for JSON serialization
+    chart_df = df.reset_index().rename(columns={"index": "time", "Date": "time"})
+    chart_df = chart_df.where(pd.notnull(chart_df), None)
+    
+    # Format time to string format YYYY-MM-DD
+    if "time" in chart_df.columns:
+        chart_df["time"] = chart_df["time"].dt.strftime("%Y-%m-%d")
+        
+    results["ohlcv"] = chart_df.to_dict(orient="records")
+    
     return results
 
 

@@ -77,6 +77,8 @@ class TokenType(Enum):
     FALSE = auto()
     NA = auto()
     STRATEGY = auto()
+    TO = auto()
+    BY = auto()
 
     # Special
     WALRUS = auto()  # :=
@@ -95,17 +97,18 @@ KEYWORDS = {
     'while': TokenType.WHILE, 'var': TokenType.VAR, 'varip': TokenType.VARIP,
     'true': TokenType.TRUE, 'false': TokenType.FALSE, 'na': TokenType.NA,
     'and': TokenType.AND, 'or': TokenType.OR, 'not': TokenType.NOT,
-    'strategy': TokenType.STRATEGY,
+    'strategy': TokenType.STRATEGY, 'to': TokenType.TO, 'by': TokenType.BY,
 }
 
 
 class Token:
-    __slots__ = ('type', 'value', 'line')
+    __slots__ = ('type', 'value', 'line', 'indent')
 
-    def __init__(self, type_: TokenType, value: Any, line: int = 0):
+    def __init__(self, type_: TokenType, value: Any, line: int = 1, indent: int = 0):
         self.type = type_
         self.value = value
         self.line = line
+        self.indent = indent
 
     def __repr__(self):
         return f"Token({self.type.name}, {self.value!r})"
@@ -120,8 +123,10 @@ def tokenize(source: str) -> List[Token]:
         # Skip empty lines and comments
         stripped = line.strip()
         if not stripped or stripped.startswith('//'):
-            tokens.append(Token(TokenType.NEWLINE, '\n', line_num))
+            tokens.append(Token(TokenType.NEWLINE, '\n', line_num, 0))
             continue
+            
+        line_indent = len(line) - len(line.lstrip())
 
         # Remove inline comments
         comment_idx = line.find('//')
@@ -147,7 +152,7 @@ def tokenize(source: str) -> List[Token]:
                             break
                         has_dot = True
                     j += 1
-                tokens.append(Token(TokenType.NUMBER, float(line[i:j]), line_num))
+                tokens.append(Token(TokenType.NUMBER, float(line[i:j]), line_num, line_indent))
                 i = j
                 continue
 
@@ -156,7 +161,7 @@ def tokenize(source: str) -> List[Token]:
                 j = i + 1
                 while j < len(line) and line[j] != c:
                     j += 1
-                tokens.append(Token(TokenType.STRING, line[i + 1:j], line_num))
+                tokens.append(Token(TokenType.STRING, line[i + 1:j], line_num, line_indent))
                 i = j + 1
                 continue
 
@@ -167,11 +172,11 @@ def tokenize(source: str) -> List[Token]:
                     j += 1
                 word = line[i:j]
                 if word in KEYWORDS:
-                    tokens.append(Token(KEYWORDS[word], word, line_num))
+                    tokens.append(Token(KEYWORDS[word], word, line_num, line_indent))
                 elif word in ('true', 'false'):
-                    tokens.append(Token(TokenType.BOOL, word == 'true', line_num))
+                    tokens.append(Token(TokenType.BOOL, word == 'true', line_num, line_indent))
                 else:
-                    tokens.append(Token(TokenType.IDENTIFIER, word, line_num))
+                    tokens.append(Token(TokenType.IDENTIFIER, word, line_num, line_indent))
                 i = j
                 continue
 
@@ -307,9 +312,30 @@ class TernaryOp(ASTNode):
         self.false_val = false_val
 
 class InputCall(ASTNode):
-    def __init__(self, input_type: str, kwargs: Dict[str, ASTNode]):
+    def __init__(self, input_type: str, kwargs: Dict[str, ASTNode], args: List[ASTNode] = None):
         self.input_type = input_type
         self.kwargs = kwargs
+        self.args = args or []
+
+class TupleAssignment(ASTNode):
+    def __init__(self, names: List[str], value: ASTNode, is_var: bool = False):
+        self.names = names
+        self.value = value
+        self.is_var = is_var
+
+class FunctionDef(ASTNode):
+    def __init__(self, name: str, params: List[str], body: List[ASTNode]):
+        self.name = name
+        self.params = params
+        self.body = body
+
+class ForLoop(ASTNode):
+    def __init__(self, var_name: str, start: ASTNode, end: ASTNode, step: ASTNode, body: List[ASTNode]):
+        self.var_name = var_name
+        self.start = start
+        self.end = end
+        self.step = step
+        self.body = body
 
 
 # =============================================================================
@@ -381,6 +407,14 @@ class PineParser:
         if tok.type == TokenType.IF:
             return self._parse_if()
 
+        # for loop
+        if tok.type == TokenType.FOR:
+            return self._parse_for_loop()
+
+        # Tuple assignment
+        if tok.type == TokenType.LBRACKET:
+            return self._parse_tuple_assignment()
+
         # identifier = ... or identifier := ... or function call
         if tok.type == TokenType.IDENTIFIER:
             return self._parse_identifier_statement()
@@ -412,6 +446,36 @@ class PineParser:
         self._skip_to_newline()
         return None
 
+    def _parse_tuple_assignment(self) -> ASTNode:
+        self.advance()  # consume '['
+        names = []
+        while self.peek().type != TokenType.RBRACKET and self.peek().type != TokenType.EOF:
+            self.skip_newlines()
+            if self.peek().type == TokenType.IDENTIFIER:
+                names.append(self.advance().value)
+            if self.peek().type == TokenType.COMMA:
+                self.advance()
+        self.expect(TokenType.RBRACKET)
+        self.expect(TokenType.ASSIGN)
+        value = self._parse_expression()
+        return TupleAssignment(names, value)
+
+    def _parse_for_loop(self) -> ASTNode:
+        self.advance()  # consume 'for'
+        var_name = self.expect(TokenType.IDENTIFIER).value
+        self.expect(TokenType.ASSIGN)
+        start = self._parse_expression()
+        self.expect(TokenType.TO)
+        end = self._parse_expression()
+        step = NumberLiteral(1)
+        if self.peek().type == TokenType.BY:
+            self.advance()
+            step = self._parse_expression()
+        
+        base_indent = self.tokens[self.pos - 1].indent if self.pos > 0 else 0
+        body = self._parse_block(base_indent)
+        return ForLoop(var_name, start, end, step, body)
+
     def _parse_var_declaration(self) -> ASTNode:
         self.advance()  # consume var/varip
 
@@ -425,11 +489,12 @@ class PineParser:
         return Assignment(name, value, is_var=True)
 
     def _parse_if(self) -> ASTNode:
+        base_indent = self.peek().indent
         self.advance()  # consume 'if'
         condition = self._parse_expression()
         self.skip_newlines()
 
-        body = self._parse_block()
+        body = self._parse_block(base_indent)
         else_body = []
 
         self.skip_newlines()
@@ -439,35 +504,32 @@ class PineParser:
             if self.peek().type == TokenType.IF:
                 else_body = [self._parse_if()]
             else:
-                else_body = self._parse_block()
+                else_body = self._parse_block(base_indent)
 
         return IfStatement(condition, body, else_body)
 
-    def _parse_block(self) -> List[ASTNode]:
+    def _parse_block(self, base_indent: int = 0) -> List[ASTNode]:
         """Parse an indented block of statements."""
         stmts = []
         self.skip_newlines()
 
-        # Parse statements until we hit something that's clearly not in the block
-        # Simple heuristic: parse statements on lines that start with indentation
         while self.peek().type != TokenType.EOF:
             if self.peek().type == TokenType.NEWLINE:
                 self.skip_newlines()
                 continue
 
-            # Check if we've left the block (heuristic based on keywords)
             if self.peek().type in (TokenType.ELSE, TokenType.EOF):
                 break
+                
+            if self.peek().indent <= base_indent:
+                break
 
-            # Try to parse one statement
             start_pos = self.pos
             stmt = self._parse_statement()
             if stmt:
                 stmts.append(stmt)
             if self.pos == start_pos:
                 break
-            if stmts:
-                break  # Only parse one statement per block line for simplicity
 
         return stmts
 
@@ -484,13 +546,8 @@ class PineParser:
                 args, kwargs = self._parse_call_args()
 
                 if name == 'input':
-                    node = InputCall(member, kwargs)
-                    # Don't return — might be assigned
-                    # But we already consumed the call, so need to check for assignment
-                    # Actually in Pine, input is used in assignment: x = input.int(...)
-                    # This path is reached when we start with identifier.
-                    # Let's handle it as a standalone expression
-                    return node
+                    # Treat as FunctionCall so executor can access both args and kwargs
+                    return FunctionCall(full_name, args, kwargs)
 
                 if name == 'strategy':
                     return StrategyCall(member, args, kwargs)
@@ -512,9 +569,15 @@ class PineParser:
             value = self._parse_expression()
             return Assignment(name, value, is_reassign=True)
 
-        # Function call: func(...)
+        # Function call: func(...) or Function Definition: func(a, b) => ...
         if self.peek().type == TokenType.LPAREN:
             args, kwargs = self._parse_call_args()
+            if self.peek().type == TokenType.ARROW:
+                self.advance()  # consume =>
+                params = [a.name for a in args if isinstance(a, Identifier)]
+                base_indent = self.tokens[self.pos - 1].indent if self.pos > 0 else 0
+                body = self._parse_block(base_indent)
+                return FunctionDef(name, params, body)
             return FunctionCall(name, args, kwargs)
 
         # Expression statement — just skip

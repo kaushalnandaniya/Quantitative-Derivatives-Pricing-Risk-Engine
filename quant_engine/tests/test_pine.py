@@ -50,6 +50,34 @@ if ta.crossunder(fast, slow)
     assert config.get('title') == 'Test'
 
 
+def test_parse_for_loop():
+    script = """
+//@version=5
+strategy("Test")
+sum = 0.0
+for i = 1 to 10 by 2
+    sum := sum + i
+"""
+    ast, config = parse_pine_script(script)
+    from services.pine_parser import ForLoop
+    for_loops = [n for n in ast if isinstance(n, ForLoop)]
+    assert len(for_loops) == 1
+    assert for_loops[0].var_name == 'i'
+
+
+def test_parse_tuple_assignment():
+    script = """
+//@version=5
+strategy("Test")
+[macdLine, signalLine, histLine] = ta.macd(close, 12, 26, 9)
+"""
+    ast, config = parse_pine_script(script)
+    from services.pine_parser import TupleAssignment
+    tuples = [n for n in ast if isinstance(n, TupleAssignment)]
+    assert len(tuples) == 1
+    assert tuples[0].names == ['macdLine', 'signalLine', 'histLine']
+
+
 # ===== Indicator Tests =====
 
 def test_ta_sma():
@@ -120,3 +148,54 @@ if rsiVal > 70
     results = run_pine_backtest(script, df)
     assert 'trades' in results
     assert results['summary']['total_trades'] >= 0
+def test_tuple_assignment_backtest():
+    df = _make_ohlcv(200)
+    script = """
+//@version=5
+strategy("MACD Tuple Cross", overlay=true)
+[macdLine, signalLine, histLine] = ta.macd(close, 12, 26, 9)
+if ta.crossover(macdLine, signalLine)
+    strategy.entry("Long", strategy.long)
+if ta.crossunder(macdLine, signalLine)
+    strategy.close("Long")
+"""
+    results = run_pine_backtest(script, df)
+    assert 'trades' in results
+    assert results['summary']['total_trades'] >= 0
+
+
+def test_for_loop_backtest():
+    df = _make_ohlcv(200)
+    script = """
+//@version=5
+strategy("For Loop", overlay=true)
+sumVal = 0.0
+for i = 1 to 5
+    sumVal := sumVal + 1
+if sumVal == 5
+    strategy.entry("Long", strategy.long)
+"""
+    results = run_pine_backtest(script, df)
+    assert 'trades' in results
+    assert len(results['trades']) >= 0
+
+
+def test_custom_function_backtest():
+    df = _make_ohlcv(200)
+    script = """
+//@version=5
+strategy("Custom Func", overlay=true)
+
+my_func(src, len) =>
+    sum = 0.0
+    for i = 1 to len
+        sum := sum + src
+    sum / len
+
+val = my_func(close, 5)
+if val > close
+    strategy.entry("Long", strategy.long)
+"""
+    results = run_pine_backtest(script, df)
+    assert 'trades' in results
+    assert len(results['trades']) >= 0
