@@ -239,7 +239,6 @@ export default function BacktestPage() {
         position: t.side === "long" ? "belowBar" : "aboveBar",
         color: t.side === "long" ? "#26a69a" : "#ef5350",
         shape: t.side === "long" ? "arrowUp" : "arrowDown",
-        text: `Entry ${t.side}`,
       });
     }
     if (t.exit_date) {
@@ -248,7 +247,6 @@ export default function BacktestPage() {
         position: "inBar",
         color: t.pnl >= 0 ? "#26a69a" : "#ef5350",
         shape: "circle",
-        text: "Exit",
       });
     }
     return m;
