@@ -825,12 +825,12 @@ class PineExecutor:
                 target_label = node.args[0].value
 
             if self.position != 0:
-                # If label is specified, only close if it matches the side
                 if target_label:
+                    lbl = target_label.lower()
                     current_side = 'long' if self.position > 0 else 'short'
-                    if target_label.lower() != current_side.lower() and target_label.lower() not in ('long', 'short', current_side.lower()):
-                        # Check if the label matches any open trade
-                        pass  # Close anyway for simplicity
+                    # If label specifies a direction, skip if it doesn't match current position
+                    if (lbl == 'long' and current_side == 'short') or (lbl == 'short' and current_side == 'long'):
+                        return
 
                 pnl = (price - self.entry_price) * self.position
                 if self.trades and self.trades[-1]['exit_bar'] is None:
