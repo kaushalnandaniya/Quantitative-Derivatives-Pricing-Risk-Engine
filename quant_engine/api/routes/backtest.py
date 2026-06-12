@@ -12,6 +12,7 @@ API endpoints for Pine Script backtesting:
 """
 
 import logging
+import pandas as pd
 from typing import Optional, List, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query
